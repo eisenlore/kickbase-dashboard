@@ -1,0 +1,2368 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kickbase Dashboard</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --panel-2: #1e222b;
+    --border: #2a2f3a;
+    --text: #e8eaed;
+    --text-dim: #9aa1ac;
+    --accent: #3ddc84;
+    --accent-2: #ffb238;
+    --red: #ff5c5c;
+    --radius: 10px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+  header {
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--panel);
+  }
+  header h1 { font-size: 18px; margin: 0; letter-spacing: 0.5px; }
+  header h1 span { color: var(--accent); }
+  #logoutBtn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    padding: 6px 12px;
+    border-radius: var(--radius);
+    cursor: pointer;
+    font-size: 13px;
+    display: none;
+  }
+  #logoutBtn:hover { border-color: var(--red); color: var(--red); }
+
+  /* Login */
+  #loginScreen {
+    max-width: 380px;
+    margin: 80px auto;
+    padding: 32px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+  #loginScreen h2 { margin-top: 0; font-size: 20px; }
+  #loginScreen p.hint { color: var(--text-dim); font-size: 13px; line-height: 1.5; }
+  label { display: block; font-size: 13px; color: var(--text-dim); margin: 14px 0 6px; }
+  input[type=email], input[type=password], input[type=text], select {
+    width: 100%;
+    padding: 10px 12px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-size: 14px;
+  }
+  input:focus, select:focus { outline: none; border-color: var(--accent); }
+  button.primary {
+    margin-top: 20px;
+    width: 100%;
+    padding: 11px;
+    background: var(--accent);
+    color: #08130d;
+    border: none;
+    border-radius: var(--radius);
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  button.primary:hover { opacity: 0.9; }
+  button.primary:disabled { opacity: 0.5; cursor: default; }
+  #loginError {
+    margin-top: 14px;
+    color: var(--red);
+    font-size: 13px;
+    display: none;
+  }
+
+  /* App shell */
+  #app { display: none; }
+  nav#tabs {
+    display: flex;
+    gap: 4px;
+    padding: 12px 24px 0;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+    flex-wrap: wrap;
+  }
+  nav#tabs button {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    padding: 10px 16px;
+    font-size: 14px;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+  }
+  nav#tabs button.active { color: var(--accent); border-bottom-color: var(--accent); }
+  nav#tabs button:hover:not(.active) { color: var(--text); }
+
+  main { padding: 24px; max-width: 1100px; margin: 0 auto; }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+  .panel h3 { margin-top: 0; font-size: 15px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; }
+  .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  th { color: var(--text-dim); font-weight: 500; text-transform: uppercase; font-size: 11px; }
+  tr:hover td { background: var(--panel-2); }
+  .trend-up { color: var(--accent); }
+  .trend-down { color: var(--red); }
+  .muted { color: var(--text-dim); }
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+  }
+  pre {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px;
+    overflow: auto;
+    font-size: 12px;
+    max-height: 500px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .status { font-size: 13px; padding: 10px 12px; border-radius: var(--radius); margin-bottom: 12px; }
+  .status.err { background: rgba(255,92,92,0.1); color: var(--red); border: 1px solid rgba(255,92,92,0.3); }
+  .status.ok { background: rgba(61,220,132,0.1); color: var(--accent); border: 1px solid rgba(61,220,132,0.3); }
+  .status.info { background: rgba(255,178,56,0.08); color: var(--accent-2); border: 1px solid rgba(255,178,56,0.25); }
+  a.link { color: var(--accent-2); cursor: pointer; text-decoration: underline; }
+  .spinner {
+    display: inline-block; width: 14px; height: 14px;
+    border: 2px solid var(--border); border-top-color: var(--accent);
+    border-radius: 50%; animation: spin 0.7s linear infinite; vertical-align: middle;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  code { background: var(--panel-2); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+
+  /* ---------- Mobile-Optimierung ---------- */
+  @media (max-width: 640px) {
+    header { padding: 12px 14px; }
+    header h1 { font-size: 15px; }
+    #logoutBtn { padding: 5px 10px; font-size: 12px; }
+
+    #loginScreen { margin: 24px 12px; padding: 20px; max-width: none; }
+
+    nav#tabs {
+      padding: 8px 8px 0;
+      overflow-x: auto;
+      flex-wrap: nowrap;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+    }
+    nav#tabs::-webkit-scrollbar { display: none; }
+    nav#tabs button { padding: 8px 10px; font-size: 13px; white-space: nowrap; flex-shrink: 0; }
+
+    main { padding: 12px; }
+    .panel { padding: 14px; margin-bottom: 12px; }
+    .panel h3 { font-size: 13px; }
+
+    /* Tabellen horizontal scrollbar statt Layout zu sprengen — Zellinhalte bleiben unverändert */
+    table { display: block; overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; }
+    th, td { padding: 7px 8px; font-size: 12px; }
+
+    /* Große Kennzahlen (Kontostand, Kartenwerte) auf Handy-Breite verkleinern — !important nötig,
+       da diese Werte mit Inline-Styles gerendert werden */
+    [style*="font-size:32px"], [style*="font-size:26px"] { font-size: 20px !important; }
+
+    /* Karten-Raster (Szenarien, Vergleichs-Kacheln) auf einer Spalte, weniger Innenabstand */
+    div[style*="grid-template-columns: repeat(auto-fit"] { grid-template-columns: 1fr !important; gap: 12px !important; }
+
+    /* Szenario-Rechner-Spalten (Szenario A/B/C) untereinander statt nebeneinander */
+    #scenarioASlots, #scenarioBSlots, #scenarioCSlots { min-width: 0; }
+
+    /* Popup/Modal randlos genug Platz lassen */
+    #valueModalOverlay > div { padding: 16px; max-width: none; }
+
+    /* Buttons im Kopfbereich von Panels nicht zu breit, damit Titel nicht umbricht */
+    button.primary[style*="width:auto"] { padding: 7px 12px; font-size: 13px; }
+
+    /* iOS zoomt automatisch rein, wenn Eingabefelder eine Schriftgröße unter 16px haben */
+    input[type=email], input[type=password], input[type=text], select { font-size: 16px; }
+
+    /* Avatar-Chips (Badges mit Bild) etwas kompakter — !important nötig, da avatarHtml() Inline-Styles setzt */
+    .badge img { width: 18px !important; height: 18px !important; }
+    .badge { font-size: 10px; padding: 2px 6px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Kickbase<span>Dashboard</span></h1>
+  <button id="logoutBtn" onclick="logout()">Logout</button>
+</header>
+
+<div id="loginScreen">
+  <h2>Login</h2>
+  <p class="hint">
+    Login läuft direkt gegen die inoffizielle Kickbase-API. Zugangsdaten werden nirgendwo gespeichert,
+    nur der Session-Token liegt im Browser-Speicher dieser Seite (verschwindet beim Neuladen).
+  </p>
+  <label for="email">E-Mail</label>
+  <input type="email" id="email" autocomplete="username" placeholder="deine@email.de">
+  <label for="password">Passwort</label>
+  <input type="password" id="password" autocomplete="current-password" placeholder="••••••••">
+  <button class="primary" id="loginBtn" onclick="login()">Einloggen</button>
+  <div id="loginError"></div>
+</div>
+
+<div id="app">
+  <nav id="tabs">
+    <button class="active" data-tab="home" onclick="switchTab('home')">Start</button>
+    <button data-tab="squad" onclick="switchTab('squad')">Kader</button>
+    <button data-tab="sell" onclick="switchTab('sell')">Verkauf</button>
+    <button data-tab="market" onclick="switchTab('market')">Markt</button>
+    <button data-tab="managers" onclick="switchTab('managers')">Andere Teams</button>
+    <button data-tab="apitest" onclick="switchTab('apitest')">API-Test</button>
+  </nav>
+
+  <main>
+
+    <div class="tab-content" id="tab-home">
+      <div class="panel">
+        <div class="row" style="justify-content: space-between;">
+          <h3 style="margin:0;">Liga</h3>
+          <div class="row" style="gap:12px;">
+            <span id="currentLeagueBadge" style="display:none; font-size:13px; color: var(--text-dim);">Aktiv: <span id="currentLeagueName" style="color: var(--accent); font-weight:600;"></span></span>
+            <button id="reloadLeagueBtn" class="primary" style="width:auto; margin:0; padding:6px 12px; display:none;" onclick="reloadCurrentLeague()">Liga-Daten neu laden</button>
+          </div>
+        </div>
+        <div id="leagueList" class="muted">Lade Ligen…</div>
+      </div>
+
+      <div class="panel">
+        <h3>Kontostand</h3>
+        <div id="budgetBox" class="muted">–</div>
+      </div>
+
+      <div class="panel">
+        <h3>Liga-Tabelle</h3>
+        <div id="leagueTableBox" class="muted">–</div>
+      </div>
+
+      <div class="panel">
+        <div class="row" style="justify-content: space-between;">
+          <h3 style="margin:0;">Top Marktwert-Gewinner</h3>
+          <button class="primary" style="width:auto; margin:0; padding:8px 14px;" onclick="loadTopMarketGainers()">Neu laden</button>
+        </div>
+        <p class="muted" style="font-size:13px;">Marktspieler mit dem stärksten Marktwert-Anstieg heute, unabhängig vom Budget.</p>
+        <div id="topGainersBox" class="muted">–</div>
+      </div>
+
+      <div class="panel">
+        <div class="row" style="justify-content: space-between;">
+          <h3 style="margin:0;">Team-Marktwert-Entwicklung</h3>
+          <button class="primary" style="width:auto; margin:0; padding:8px 14px;" onclick="loadHome()">Neu laden</button>
+        </div>
+        <div id="homeStatus"></div>
+        <div id="teamValueChart" class="muted">Wähle oben eine Liga.</div>
+      </div>
+
+      <div class="panel">
+        <div class="row" style="justify-content: space-between;">
+          <h3 style="margin:0;">Top 5 Gewinner &amp; Verlierer (dein Kader)</h3>
+          <select id="winnersLosersPeriod" onchange="renderWinnersLosers()" style="max-width:160px;">
+            <option value="1">1 Tag</option>
+            <option value="7">7 Tage</option>
+          </select>
+        </div>
+        <div class="row" style="align-items: stretch; gap: 20px; flex-wrap: wrap; margin-top:10px;">
+          <div style="flex: 1; min-width: 280px;">
+            <h3 style="font-size:13px;">Gewinner</h3>
+            <div id="winnersBox" class="muted">–</div>
+          </div>
+          <div style="flex: 1; min-width: 280px;">
+            <h3 style="font-size:13px;">Verlierer</h3>
+            <div id="losersBox" class="muted">–</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3>Letzte Transfers</h3>
+        <div id="transfersBox" class="muted">–</div>
+      </div>
+    </div>
+
+    <div class="tab-content" id="tab-market" style="display:none;">
+      <div class="panel">
+        <div class="row" style="justify-content: space-between;">
+          <h3 style="margin:0;">Transfermarkt</h3>
+          <button class="primary" style="width:auto; margin:0; padding:8px 14px;" onclick="loadMarket()">Neu laden</button>
+        </div>
+        <div id="marketStatus"></div>
+        <div id="marketTable" class="muted">Wähle zuerst eine Liga oben im Start-Tab.</div>
+      </div>
+    </div>
+
+    <div class="tab-content" id="tab-squad" style="display:none;">
+      <div class="panel">
+        <div class="row" style="justify-content: space-between;">
+          <h3 style="margin:0;">Kader</h3>
+          <button class="primary" style="width:auto; margin:0; padding:8px 14px;" onclick="loadSquad()">Neu laden</button>
+        </div>
+        <div id="squadStatus"></div>
+        <div id="squadTable" class="muted">Wähle zuerst eine Liga oben im Start-Tab.</div>
+      </div>
+
+      <div class="panel">
+        <h3>Formvergleich</h3>
+        <p class="muted" style="font-size:13px;">
+          Vergleich nach Punkteschnitt und Gesamtpunkten, gruppiert nach Position. Basis ist der Saison-Punkteschnitt,
+          keine spieltag-genaue Aufschlüsselung (dafür haben wir bislang keine bestätigte Datenquelle gefunden).
+        </p>
+        <div id="formComparisonBox" class="muted">Lade zuerst den Kader oben.</div>
+      </div>
+
+      <div class="panel">
+        <div class="row" style="justify-content: space-between;">
+          <h3 style="margin:0;">Optimale Aufstellung</h3>
+          <button class="primary" style="width:auto; margin:0; padding:8px 14px;" onclick="computeAndRenderLineup()">Berechnen</button>
+        </div>
+        <p class="muted" style="font-size:13px;">
+          Testet gängige Formationen (3-4-3, 3-5-2, 4-3-3, 4-4-2, 4-5-1, 5-3-2, 5-4-1) und wählt die Kombination
+          mit dem höchsten Punkteschnitt aus deinem aktuellen Kader.
+        </p>
+        <div id="lineupBox" class="muted">Kader oben laden, dann "Berechnen" klicken.</div>
+      </div>
+
+      <div class="panel">
+        <div class="row" style="justify-content: space-between;">
+          <h3 style="margin:0;">Szenario-Rechner</h3>
+          <button class="primary" style="width:auto; margin:0; padding:8px 14px;" onclick="evalAllScenarios()">Vergleichen</button>
+        </div>
+        <p class="muted" style="font-size:13px;">
+          Wähl dir bis zu 5 Spieler aus deinem Kader pro Szenario aus und sieh sofort, was das für deinen Kontostand bedeutet.
+        </p>
+        <div id="scenarioComparisonBox" style="margin-bottom:20px;"></div>
+        <div class="row" style="align-items: stretch; gap: 16px; flex-wrap: wrap;">
+          <div style="flex: 1; min-width: 240px; background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px;">
+            <h3 style="font-size:13px; margin-top:0; color: var(--accent);">Szenario A</h3>
+            <div id="scenarioASlots"></div>
+            <div id="scenarioAResult" class="muted" style="margin-top:14px; font-size:13px;">–</div>
+          </div>
+          <div style="flex: 1; min-width: 240px; background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px;">
+            <h3 style="font-size:13px; margin-top:0; color: var(--accent);">Szenario B</h3>
+            <div id="scenarioBSlots"></div>
+            <div id="scenarioBResult" class="muted" style="margin-top:14px; font-size:13px;">–</div>
+          </div>
+          <div style="flex: 1; min-width: 240px; background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px;">
+            <h3 style="font-size:13px; margin-top:0; color: var(--accent);">Szenario C</h3>
+            <div id="scenarioCSlots"></div>
+            <div id="scenarioCResult" class="muted" style="margin-top:14px; font-size:13px;">–</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-content" id="tab-sell" style="display:none;">
+      <div class="panel" style="background: linear-gradient(135deg, var(--panel) 0%, var(--panel-2) 100%);">
+        <div class="row" style="justify-content: space-between; flex-wrap: wrap; gap: 16px;">
+          <div>
+            <div class="muted" style="font-size:12px; text-transform:uppercase; letter-spacing:0.5px;">Kontostand</div>
+            <div id="sellDashboardBudget" style="font-size:32px; font-weight:700; margin-top:4px;">–</div>
+          </div>
+          <div id="sellDashboardSummary" class="row" style="gap:20px; flex-wrap:wrap;"></div>
+          <button class="primary" style="width:auto; margin:0; padding:10px 18px; align-self:flex-start;" onclick="refreshSellDashboard()">Alles neu berechnen</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3 style="margin-top:0;">Halten oder verkaufen?</h3>
+        <p class="muted" style="font-size:13px;">
+          Momentum-Einschätzung je Spieler. Hak "Unverkäuflich" an, um einen Spieler aus allen Verkaufsszenarien unten auszuschließen.
+        </p>
+        <div id="holdSellBox" class="muted">Kader oben im Kader-Tab laden.</div>
+      </div>
+
+      <div class="panel">
+        <h3 style="margin-top:0;">Verkaufsszenarien — Kontostand auf mindestens 0</h3>
+        <p class="muted" style="font-size:13px;">
+          Sechs Wege, deinen Kontostand ins Plus zu bringen: fünf mit unterschiedlicher Priorität, dazu eine exakt
+          durchgerechnete Optimallösung. "Unverkäuflich" markierte Spieler bleiben überall unangetastet, ebenso die
+          Mindestbesetzung (11 Kader, und danach muss noch eine spielbare Formation aufstellbar sein — geprüft anhand derselben Logik wie der Aufstellungs-Optimierer, nicht anhand fixer Positions-Mindestzahlen).
+        </p>
+        <div id="autoSellScenariosBox" class="muted">Kontostand und Kader laden, dann oben "Alles neu berechnen" klicken.</div>
+      </div>
+    </div>
+
+    <div class="tab-content" id="tab-managers" style="display:none;">
+      <div class="panel">
+        <div class="row" style="justify-content: space-between;">
+          <h3 style="margin:0;">Andere Teams</h3>
+          <button class="primary" style="width:auto; margin:0; padding:8px 14px;" onclick="loadManagers()">Neu laden</button>
+        </div>
+        <div id="managersStatus"></div>
+        <div id="managersList" class="muted">Wähle zuerst eine Liga oben im Start-Tab.</div>
+        <div id="managerSquadBox" style="margin-top:18px;"></div>
+      </div>
+    </div>
+
+    <div class="tab-content" id="tab-apitest" style="display:none;">
+      <div class="panel">
+        <h3>API-Test</h3>
+        <p class="muted" style="font-size:13px;">
+          Zum Erkunden unbekannter oder ungetesteter Endpunkte. Pfad relativ zu <code>https://api.kickbase.com</code>,
+          z.B. <code>/v4/leagues/{leagueId}/squad</code>. Nutzt automatisch deinen Token.
+        </p>
+        <div class="row">
+          <select id="apiMethod" style="max-width:100px;">
+            <option>GET</option><option>POST</option><option>PUT</option><option>DELETE</option>
+          </select>
+          <input type="text" id="apiPath" placeholder="/v4/leagues/" style="flex:1;">
+          <button class="primary" style="width:auto; margin:0; padding:8px 14px;" onclick="apiTest()">Senden</button>
+        </div>
+        <label for="apiBody">Body (JSON, nur bei POST/PUT)</label>
+        <input type="text" id="apiBody" placeholder="{}">
+        <div id="apiTestStatus" style="margin-top:14px;"></div>
+        <pre id="apiTestResult" style="display:none;"></pre>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<div id="valueModalOverlay" onclick="if(event.target===this) closeValueModal()" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:100; align-items:center; justify-content:center; padding:20px;">
+  <div style="background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding:24px; max-width:760px; width:100%; max-height:90vh; overflow:auto;">
+    <div class="row" style="justify-content: space-between; margin-bottom:14px;">
+      <h3 style="margin:0;" id="valueModalTitle">Marktwert-Verlauf</h3>
+      <button onclick="closeValueModal()" style="background:none; border:1px solid var(--border); color: var(--text-dim); border-radius: var(--radius); padding:6px 12px; cursor:pointer;">Schließen</button>
+    </div>
+    <div id="valueModalStatus"></div>
+    <div id="valueModalContent"></div>
+  </div>
+</div>
+
+<script>
+const BASE_URL = 'https://api.kickbase.com';
+let TOKEN = null;
+let LEAGUES = [];
+let CURRENT_LEAGUE = null;
+let CURRENT_LEAGUE_NAME = null;
+let LAST_MARKET_PLAYERS = [];
+let LAST_SQUAD_RAW = null;
+let LEAGUE_MANAGERS = [];
+let LAST_MANAGER_SQUAD_PLAYERS = [];
+let LAST_MANAGER_SQUAD_RAW = null;
+
+// ---------- helpers ----------
+function fmtMoney(n) {
+  if (n === null || n === undefined || isNaN(n)) return '–';
+  return new Intl.NumberFormat('de-DE').format(Math.round(n)) + ' €';
+}
+function statusHtml(type, msg) {
+  return `<div class="status ${type}">${msg}</div>`;
+}
+// Einheitliche Spieler-ID-Extraktion (Kickbase nutzt je nach Endpoint unterschiedliche Feldnamen)
+function getPid(p) {
+  return p && (p.id || p.i || p.pi || p.playerId);
+}
+
+// Merkt sich Spieler-Objekte anhand ihrer ID, damit das Marktwert-Verlauf-Popup (das nur die ID
+// bekommt) trotzdem Name/Bild anzeigen kann, ohne den Spieler erneut abzurufen.
+const PLAYER_CACHE = {};
+function cachePlayer(p) {
+  const pid = getPid(p);
+  if (pid) PLAYER_CACHE[pid] = p;
+}
+
+// Bild-URL für einen Spieler. Kickbase liefert nur einen relativen Pfad ("pim"-Feld), die Basis-URL
+// ist NICHT offiziell dokumentiert/bestätigt, hier eine plausible Annahme. Schlägt der Abruf fehl,
+// wird das Bild per onerror einfach ausgeblendet statt ein kaputtes Bild-Icon zu zeigen.
+const IMAGE_BASE = 'https://kickbase.b-cdn.net/';
+function playerImgUrl(p) {
+  const path = p && (p.pim || p.playerImage || p.img);
+  if (!path) return null;
+  if (/^https?:\/\//.test(path)) return path;
+  return IMAGE_BASE + path;
+}
+function avatarHtml(p) {
+  const url = playerImgUrl(p);
+  if (!url) return '';
+  return `<img src="${url}" onerror="this.style.display='none'" style="width:22px; height:22px; border-radius:50%; object-fit:cover; vertical-align:middle; margin-right:6px; background:var(--panel-2);">`;
+}
+// Kombinierte Zelle: Bild + Name + Status-Badge, cached den Spieler nebenbei für das Verlauf-Popup
+function playerCell(p) {
+  cachePlayer(p);
+  return `${avatarHtml(p)}${playerName(p)} ${statusBadge(p)}`;
+}
+// Die drei bekannten Pfad-Varianten für den eigenen Kader, zentral an einer Stelle
+function squadPathAttempts() {
+  return [
+    `/v4/leagues/${CURRENT_LEAGUE}/squad`,
+    `/v4/leagues/${CURRENT_LEAGUE}/teams/me/players`,
+    `/v4/leagues/${CURRENT_LEAGUE}/me/squad`
+  ];
+}
+let SESSION_EXPIRED = false;
+
+async function kbFetch(path, { method = 'GET', body = null, authed = true, _retry = 0 } = {}) {
+  const headers = { 'Content-Type': 'application/json', 'Accept': 'application/json' };
+  if (authed && TOKEN) headers['Authorization'] = 'Bearer ' + TOKEN;
+  const res = await fetch(BASE_URL + path, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined
+  });
+
+  // Bei Rate-Limit oder vorübergehendem Server-Fehler: kurz warten und bis zu 2x erneut versuchen
+  if ((res.status === 429 || res.status >= 500) && _retry < 2) {
+    await new Promise(r => setTimeout(r, 500 * (_retry + 1)));
+    return kbFetch(path, { method, body, authed, _retry: _retry + 1 });
+  }
+
+  let data = null;
+  try { data = await res.json(); } catch (e) { /* no body */ }
+
+  if (!res.ok) {
+    // 401 während einer laufenden Session (nicht beim Login selbst) = Token abgelaufen/ungültig geworden
+    if (res.status === 401 && authed && TOKEN && !SESSION_EXPIRED) {
+      SESSION_EXPIRED = true;
+      sessionExpiredLogout();
+    }
+    const err = new Error(`HTTP ${res.status}`);
+    err.status = res.status;
+    err.data = data;
+    throw err;
+  }
+  return data;
+}
+
+function sessionExpiredLogout() {
+  TOKEN = null;
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('logoutBtn').style.display = 'none';
+  document.getElementById('loginScreen').style.display = 'block';
+  const errBox = document.getElementById('loginError');
+  errBox.textContent = 'Deine Sitzung ist abgelaufen (Token ungültig geworden). Bitte erneut einloggen.';
+  errBox.style.display = 'block';
+}
+
+// ---------- login ----------
+async function login() {
+  const email = document.getElementById('email').value.trim();
+  const password = document.getElementById('password').value;
+  const btn = document.getElementById('loginBtn');
+  const errBox = document.getElementById('loginError');
+  errBox.style.display = 'none';
+
+  if (!email || !password) {
+    errBox.textContent = 'Bitte E-Mail und Passwort eingeben.';
+    errBox.style.display = 'block';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Logge ein…';
+
+  try {
+    const data = await kbFetch('/v4/user/login', {
+      method: 'POST',
+      authed: false,
+      body: { em: email, loy: false, pass: password, rep: {} }
+    });
+
+    TOKEN = data.tkn || data.token || data.tok || null;
+    SESSION_EXPIRED = false;
+    if (!TOKEN) throw new Error('Kein Token in der Antwort gefunden.');
+
+    document.getElementById('loginScreen').style.display = 'none';
+    document.getElementById('app').style.display = 'block';
+    document.getElementById('logoutBtn').style.display = 'inline-block';
+
+    await loadLeagues();
+  } catch (e) {
+    console.error(e);
+    let msg = 'Login fehlgeschlagen. ';
+    if (e.message.includes('Failed to fetch')) {
+      msg += 'Vermutlich blockiert der Browser den Request wegen CORS (die Kickbase-API erlaubt evtl. keine Cross-Origin-Anfragen von dieser Seite). Sag Bescheid, dann bauen wir eine Alternative (z.B. Token manuell holen).';
+    } else if (e.status === 401) {
+      msg += 'E-Mail oder Passwort falsch.';
+    } else {
+      msg += e.message;
+    }
+    errBox.textContent = msg;
+    errBox.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Einloggen';
+  }
+}
+
+function logout() {
+  TOKEN = null;
+  LEAGUES = [];
+  CURRENT_LEAGUE = null;
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('logoutBtn').style.display = 'none';
+  document.getElementById('loginScreen').style.display = 'block';
+  document.getElementById('password').value = '';
+}
+
+// ---------- tabs ----------
+function switchTab(tab) {
+  document.querySelectorAll('nav#tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
+  document.getElementById('tab-' + tab).style.display = 'block';
+}
+
+// Zentraler, robuster Kader-Abruf (probiert dieselben Pfad-Varianten wie der Kader-Tab, cached in LAST_SQUAD_RAW)
+async function getOwnSquad() {
+  for (const path of squadPathAttempts()) {
+    try {
+      const data = await kbFetch(path);
+      LAST_SQUAD_RAW = data;
+      return data.players || data.it || data.pl || [];
+    } catch (e) { /* try next */ }
+  }
+  if (LAST_SQUAD_RAW) return LAST_SQUAD_RAW.players || LAST_SQUAD_RAW.it || LAST_SQUAD_RAW.pl || [];
+  return [];
+}
+
+// Liefert den Kader aus dem Cache ohne Netzwerk-Request (leer, falls noch nichts geladen wurde)
+function getCachedSquadPlayers() {
+  if (!LAST_SQUAD_RAW) return [];
+  return LAST_SQUAD_RAW.players || LAST_SQUAD_RAW.it || LAST_SQUAD_RAW.pl || [];
+}
+
+// ---------- Startseite ----------
+// Kontostand über /v4/leagues/{id}/me. Feld "b" scheint der Kontostand zu sein (negativ = im Minus),
+// unbestätigt aus der Community-Doku, aber im Test plausibel (negativer Wert passend zu Käufen).
+let CURRENT_BUDGET = null;
+
+async function loadBudget() {
+  const box = document.getElementById('budgetBox');
+  box.innerHTML = '<span class="spinner"></span> Lade Kontostand…';
+  try {
+    const data = await kbFetch(`/v4/leagues/${CURRENT_LEAGUE}/me`);
+    const budget = data.b;
+    if (budget === undefined) {
+      CURRENT_BUDGET = null;
+      box.innerHTML = statusHtml('info', 'Kein "b"-Feld in der Antwort gefunden.') + `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+      updateSellDashboardBudget();
+      return;
+    }
+    CURRENT_BUDGET = budget;
+    const cls = budget < 0 ? 'trend-down' : 'trend-up';
+    box.innerHTML = `<div class="${cls}" style="font-size:22px; font-weight:600;">${fmtMoney(budget)}</div>
+      <p class="muted" style="font-size:12px; margin-top:6px;">Ungetestetes Feld ("b" aus /me), scheint aber zu stimmen. Bei Abweichungen bitte melden.</p>`;
+    updateSellDashboardBudget();
+  } catch (e) {
+    CURRENT_BUDGET = null;
+    box.innerHTML = statusHtml('info', 'Kontostand konnte nicht geladen werden: ' + e.message);
+    updateSellDashboardBudget();
+  }
+}
+
+// Spiegelt den Kontostand kompakt in den Kopf des Verkauf-Tabs
+function updateSellDashboardBudget() {
+  const el = document.getElementById('sellDashboardBudget');
+  if (!el) return;
+  if (CURRENT_BUDGET === null) { el.innerHTML = '<span class="muted">–</span>'; return; }
+  const cls = CURRENT_BUDGET < 0 ? 'trend-down' : 'trend-up';
+  el.innerHTML = `<span class="${cls}">${fmtMoney(CURRENT_BUDGET)}</span>`;
+}
+
+// "Alles neu berechnen"-Button im Verkauf-Tab: Kontostand, Halten/Verkaufen und Szenarien in einem Rutsch
+async function refreshSellDashboard() {
+  await loadBudget();
+  await loadHoldSellRecommendations();
+  computeAutoSellScenarios();
+}
+
+async function loadHome() {
+  if (!CURRENT_LEAGUE) {
+    document.getElementById('homeStatus').innerHTML = statusHtml('info', 'Wähle zuerst eine Liga oben im Start-Tab.');
+    return;
+  }
+  await loadBudget();
+  // Kader nur EINMAL laden (Cache nutzen falls vorhanden) und an beide Verbraucher weiterreichen,
+  // statt ihn wie zuvor für Chart und Gewinner/Verlierer separat zweimal abzurufen
+  const squadPlayers = getCachedSquadPlayers().length ? getCachedSquadPlayers() : await getOwnSquad();
+  // Liga-Tabelle nutzt bereits von loadManagers() geladene Daten, kein erneuter Request
+  if (!LEAGUE_MANAGERS.length) await loadManagers();
+  renderLeagueTable();
+  await loadRealTeamValues(); // echte Teamwerte je Manager (ein Zusatz-Request pro Manager, macht den Start-Ladevorgang spürbar länger)
+  // sequenziell statt parallel, um Race Conditions / Überlastung der API zu vermeiden
+  await loadTeamValueChart(squadPlayers);
+  await loadTransfers();
+  await loadWinnersLosers(squadPlayers);
+  await loadTopMarketGainers();
+  await loadHoldSellRecommendations(); // ein Zusatz-Request pro Kader-Spieler, macht den Start-Ladevorgang spürbar länger
+}
+
+async function loadTeamValueChart(squadPlayers) {
+  const status = document.getElementById('homeStatus');
+  const box = document.getElementById('teamValueChart');
+  await renderTeamValueChartInto(squadPlayers, box, status);
+}
+
+// Generische Team-Marktwert-Verlauf-Berechnung (Summe der Einzelverläufe), in einen beliebigen
+// Container gerendert. Wird sowohl für den eigenen Kader (Start-Tab) als auch für die Kader anderer
+// Manager (Andere Teams) genutzt, um Code nicht doppelt zu pflegen.
+async function renderTeamValueChartInto(squadPlayers, box, status) {
+  if (!squadPlayers.length) {
+    box.innerHTML = '<span class="muted">Kader konnte über keinen bekannten Endpunkt geladen werden.</span>';
+    return;
+  }
+  const days = 92; // 30 Tage lieferte bei Tests öfter leere Antworten von Kickbase, 92 Tage war zuverlässiger
+  const histories = [];
+  let failed = 0;
+  let firstError = null;
+  for (const p of squadPlayers) {
+    const pid = getPid(p);
+    if (status) status.innerHTML = `<span class="spinner"></span> Lade Marktwert-Verlauf (${histories.length + failed + 1}/${squadPlayers.length})…`;
+    if (!pid) { failed++; if (!firstError) firstError = 'Keine Spieler-ID im Kader-Objekt gefunden (Feldname unbekannt).'; continue; }
+    try {
+      let data = await kbFetch(`/v4/leagues/${CURRENT_LEAGUE}/players/${pid}/marketvalue/${days}`);
+      let points = data.it || [];
+      if (!points.length) {
+        // manchmal liefert Kickbase beim ersten Versuch leer, ein zweiter Versuch hilft oft
+        await new Promise(r => setTimeout(r, 400));
+        data = await kbFetch(`/v4/leagues/${CURRENT_LEAGUE}/players/${pid}/marketvalue/${days}`);
+        points = data.it || [];
+      }
+      if (points.length) {
+        histories.push(points.map(pt => pt.mv));
+      } else if (!firstError) {
+        firstError = `Antwort für Spieler-ID ${pid} enthielt auch nach zweitem Versuch keine Verlaufspunkte.`;
+      }
+    } catch (e) {
+      failed++;
+      if (!firstError) firstError = `Fehler bei Spieler-ID ${pid}: ${e.message}`;
+    }
+    await new Promise(r => setTimeout(r, 120));
+  }
+  if (!histories.length) {
+    box.innerHTML = statusHtml('info', 'Konnte für keinen Spieler einen Marktwert-Verlauf laden.' + (firstError ? ' Erster Fehler: ' + firstError : ''));
+    if (status) status.innerHTML = '';
+    return;
+  }
+  const len = Math.min(...histories.map(h => h.length));
+  const summed = [];
+  for (let i = 0; i < len; i++) {
+    summed.push(histories.reduce((sum, h) => sum + h[h.length - len + i], 0));
+  }
+  const min = Math.min(...summed), max = Math.max(...summed);
+  const w = 700, h2 = 220, pad = 30;
+  const pts = summed.map((v, i) => {
+    const x = pad + (i / (summed.length - 1)) * (w - 2 * pad);
+    const y = h2 - pad - ((v - min) / (max - min || 1)) * (h2 - 2 * pad);
+    return `${x},${y}`;
+  }).join(' ');
+  const first = summed[0], last = summed[summed.length - 1];
+  const diff = last - first;
+  box.innerHTML = `
+    <div class="row" style="margin-bottom:14px; gap:24px;">
+      <div><div class="muted" style="font-size:12px;">Team-Marktwert aktuell</div><div style="font-size:18px;">${fmtMoney(last)}</div></div>
+      <div><div class="muted" style="font-size:12px;">vor ${days} Tagen</div><div style="font-size:18px;">${fmtMoney(first)}</div></div>
+      <div><div class="muted" style="font-size:12px;">Veränderung (${days}d)</div>${trendBadge(diff)}</div>
+    </div>
+    <svg viewBox="0 0 ${w} ${h2}" style="width:100%; height:auto; background: var(--panel-2); border-radius: var(--radius); border: 1px solid var(--border);">
+      <polyline fill="none" stroke="${diff >= 0 ? '#3ddc84' : '#ff5c5c'}" stroke-width="2" points="${pts}" />
+    </svg>
+    ${chartDateAxis(summed.length)}
+    ${failed ? `<p class="muted" style="font-size:12px; margin-top:8px;">${failed} von ${squadPlayers.length} Spielern konnten nicht geladen werden.</p>` : ''}
+  `;
+  if (status) status.innerHTML = '';
+}
+
+async function loadTransfers() {
+  const box = document.getElementById('transfersBox');
+  box.innerHTML = '<span class="spinner"></span> Lade Transfers…';
+  const attempts = [
+    `/v4/leagues/${CURRENT_LEAGUE}/activitiesFeed`,
+    `/v4/leagues/${CURRENT_LEAGUE}/feed`
+  ];
+  for (const path of attempts) {
+    try {
+      const data = await kbFetch(path);
+      const items = data.af || data.items || data.it || data.activities || [];
+      if (!items.length) { box.innerHTML = statusHtml('info', 'Feed geladen, aber leer.'); return; }
+      // Typ 15 = Spieler gekauft (byr = Käufer, pn = Spielername, trp = Transferpreis); alles andere sind andere Feed-Ereignisse (z.B. Markt-Listung)
+      const transfers = items.filter(it => it.data && it.data.trp != null);
+
+      const list = transfers.slice(0, 10);
+      if (!list.length) {
+        box.innerHTML = statusHtml('info', 'Keine Käufe im Feed gefunden (nur andere Aktivitäten wie Markt-Listungen).') +
+          `<div style="margin-top:10px;"><a class="link" onclick="toggleTransfersRaw()">Rohdaten anzeigen</a></div>
+           <div id="transfersRawBox" style="display:none; margin-top:10px;"><pre>${JSON.stringify(items.slice(0, 10), null, 2)}</pre></div>`;
+        return;
+      }
+      // Aktuellen Marktwert je verkauftem Spieler ermitteln: erst aus dem Cache (kostenlos), sonst
+      // ein kleiner Zusatz-Request pro noch unbekanntem Spieler (max. 10, da die Liste gedeckelt ist).
+      for (let i = 0; i < list.length; i++) {
+        const d = list[i].data;
+        const pid = d.pi;
+        if (!pid) continue;
+        const cached = PLAYER_CACHE[pid];
+        if (cached && (cached.marketValue ?? cached.mv) != null) {
+          d._currentMv = cached.marketValue ?? cached.mv;
+          continue;
+        }
+        box.innerHTML = `<span class="spinner"></span> Lade aktuelle Marktwerte (${i + 1}/${list.length})…`;
+        try {
+          let hist = await kbFetch(`/v4/leagues/${CURRENT_LEAGUE}/players/${pid}/marketvalue/92`);
+          let points = hist.it || [];
+          if (!points.length) {
+            // manchmal liefert Kickbase beim ersten Versuch leer, ein zweiter Versuch hilft oft
+            await new Promise(r => setTimeout(r, 400));
+            hist = await kbFetch(`/v4/leagues/${CURRENT_LEAGUE}/players/${pid}/marketvalue/92`);
+            points = hist.it || [];
+          }
+          d._currentMv = points.length ? points[points.length - 1].mv : null;
+        } catch (e) {
+          d._currentMv = null;
+        }
+        await new Promise(r => setTimeout(r, 120));
+      }
+      LAST_TRANSFERS_LIST = list;
+      TABLE_SORT['transfers'] = { col: null, dir: 'desc' }; // neue Liste = Sortierung zurücksetzen
+      renderTransfers();
+      return;
+    } catch (e) { /* try next */ }
+  }
+  box.innerHTML = statusHtml('info', 'Kein Feed-Endpunkt hat funktioniert. Über den API-Test-Tab lässt sich der richtige Pfad suchen (z.B. /v4/leagues/{id}/activitiesFeed).');
+}
+
+let LAST_TRANSFERS_LIST = [];
+
+function transfersSortValue(it, col) {
+  const d = it.data;
+  switch (col) {
+    case 'date': return new Date(it.dt).getTime();
+    case 'name': return (d.pn || ((d.fn || '') + ' ' + (d.ln || '')).trim() || d.pi || '').toLowerCase();
+    case 'buyer': return (d.byr || '').toLowerCase();
+    case 'price': return d.trp ?? null;
+    case 'diff': return d._currentMv != null ? d._currentMv - d.trp : null;
+    default: return null;
+  }
+}
+
+function renderTransfers() {
+  const box = document.getElementById('transfersBox');
+  const sorted = sortRowsGeneric('transfers', LAST_TRANSFERS_LIST, transfersSortValue);
+  const rerender = "renderTransfers()";
+  let rows = sorted.map(it => {
+    const d = it.data;
+    cachePlayer(d);
+    const date = new Date(it.dt).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    const name = d.pn || ((d.fn || '') + ' ' + (d.ln || '')).trim() || d.pi;
+    const buyer = d.byr || '–';
+    const diff = d._currentMv != null ? d._currentMv - d.trp : null;
+    return `<tr><td>${date}</td><td>${avatarHtml(d)}${name}</td><td>${buyer}</td><td>${fmtMoney(d.trp)}</td><td>${diff != null ? trendBadge(diff) : '<span class="muted">–</span>'}</td></tr>`;
+  }).join('');
+  box.innerHTML = `<table><thead><tr>
+      ${genericSortHeader('transfers', 'Datum', 'date', rerender)}
+      ${genericSortHeader('transfers', 'Spieler', 'name', rerender, true)}
+      ${genericSortHeader('transfers', 'Käufer', 'buyer', rerender, true)}
+      ${genericSortHeader('transfers', 'Preis', 'price', rerender)}
+      ${genericSortHeader('transfers', 'Diff. zum MW', 'diff', rerender, false, 'Aktueller Marktwert minus Kaufpreis — sortieren')}
+    </tr></thead><tbody>${rows}</tbody></table>
+    <div style="margin-top:10px;"><a class="link" onclick="toggleTransfersRaw()">Rohdaten anzeigen</a></div>
+    <div id="transfersRawBox" style="display:none; margin-top:10px;"><pre>${JSON.stringify(LAST_TRANSFERS_LIST, null, 2)}</pre></div>`;
+}
+
+function toggleTransfersRaw() {
+  const el = document.getElementById('transfersRawBox');
+  if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+let LAST_OWN_SQUAD_PLAYERS = [];
+
+async function loadWinnersLosers(squadPlayers) {
+  LAST_OWN_SQUAD_PLAYERS = squadPlayers;
+  renderWinnersLosers();
+}
+
+function renderWinnersLosers() {
+  const winnersBox = document.getElementById('winnersBox');
+  const losersBox = document.getElementById('losersBox');
+  const period = document.getElementById('winnersLosersPeriod').value; // "1" oder "7"
+  const getVal = period === '7' ? trend7Val : trendVal;
+  const withTrend = LAST_OWN_SQUAD_PLAYERS.filter(p => getVal(p) != null);
+  if (!withTrend.length) {
+    winnersBox.innerHTML = `<span class="muted">Kein ${period === '7' ? '7-Tage' : '1-Tages'}-Trend-Feld im Kader gefunden.</span>`;
+    losersBox.innerHTML = '<span class="muted">–</span>';
+    return;
+  }
+  const sorted = [...withTrend].sort((a, b) => getVal(b) - getVal(a));
+  const winners = sorted.slice(0, 5);
+  const losers = sorted.slice(-5).reverse();
+  const renderTable = (arr) => `<table><thead><tr><th>Spieler</th><th>${period === '7' ? '7-Tage' : '1-Tages'}-Trend</th><th>Gesamt Gewinn/Verlust</th></tr></thead><tbody>
+    ${arr.map(p => `<tr><td>${playerCell(p)}</td><td>${trendBadge(getVal(p))}</td><td>${profitVal(p) != null ? trendBadge(profitVal(p)) : '<span class="muted">–</span>'}</td></tr>`).join('')}
+  </tbody></table>`;
+  winnersBox.innerHTML = renderTable(winners);
+  losersBox.innerHTML = renderTable(losers);
+}
+
+// Top Marktwert-Gewinner: unabhängig vom Budget, einfach die Marktspieler mit dem stärksten
+// Anstieg heute. Ersetzt die frühere budget-abhängige Kaufempfehlung, die nicht gewünscht war.
+let LAST_TOP_GAINERS = [];
+
+function topGainersSortValue(p, col) {
+  switch (col) {
+    case 'name': return playerName(p).toLowerCase();
+    case 'mv': return p.marketValue ?? p.mv ?? null;
+    case 'trend': return p._trendToday;
+    default: return null;
+  }
+}
+
+function renderTopGainers() {
+  const box = document.getElementById('topGainersBox');
+  const sorted = sortRowsGeneric('topGainers', LAST_TOP_GAINERS, topGainersSortValue);
+  const rerender = "renderTopGainers()";
+  let rows = sorted.map(p => `<tr>
+    <td>${playerCell(p)}</td>
+    <td>${fmtMoney(p.marketValue ?? p.mv)}</td>
+    <td>${trendBadge(p._trendToday)}</td>
+    <td><a class="link" onclick="jumpToValueHistory('${getPid(p)}')">Verlauf</a></td>
+  </tr>`).join('');
+  box.innerHTML = `<table><thead><tr>
+      ${genericSortHeader('topGainers', 'Spieler', 'name', rerender, true)}
+      ${genericSortHeader('topGainers', 'Marktwert', 'mv', rerender)}
+      ${genericSortHeader('topGainers', 'Trend (heute)', 'trend', rerender)}
+      <th>Verlauf</th>
+    </tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+async function loadTopMarketGainers() {
+  const box = document.getElementById('topGainersBox');
+  let marketPlayers = LAST_MARKET_PLAYERS;
+  if (!marketPlayers.length) {
+    box.innerHTML = '<span class="spinner"></span> Lade Markt…';
+    try {
+      const data = await kbFetch(`/v4/leagues/${CURRENT_LEAGUE}/market`);
+      marketPlayers = data.players || data.it || data.m || [];
+      LAST_MARKET_PLAYERS = marketPlayers;
+    } catch (e) { /* fällt unten auf "keine Spieler" zurück */ }
+  }
+  if (!marketPlayers.length) {
+    box.innerHTML = '<span class="muted">Markt konnte nicht geladen werden — geh einmal auf den Markt-Tab.</span>';
+    return;
+  }
+  // nutzt computeMarketTrends (überspringt Spieler, deren Trend schon berechnet wurde, z.B. vom Markt-Tab)
+  await computeMarketTrends(marketPlayers, box);
+  const rising = marketPlayers.filter(p => p._trendToday != null && p._trendToday > 0)
+    .sort((a, b) => b._trendToday - a._trendToday)
+    .slice(0, 10);
+  if (!rising.length) {
+    box.innerHTML = '<span class="muted">Keine Marktspieler mit steigendem Marktwert gefunden.</span>';
+    return;
+  }
+  LAST_TOP_GAINERS = rising;
+  TABLE_SORT['topGainers'] = { col: null, dir: 'desc' }; // neue Liste = Sortierung zurücksetzen
+  renderTopGainers();
+}
+
+// ---------- overview / leagues ----------
+async function loadLeagues() {
+  const box = document.getElementById('leagueList');
+  box.innerHTML = '<span class="spinner"></span> Lade Ligen…';
+  try {
+    let data;
+    try {
+      data = await kbFetch('/v4/leagues/');
+    } catch (e) {
+      data = await kbFetch('/v4/leagues');
+    }
+    LEAGUES = data.lins || data.leagues || data.it || data || [];
+    if (!Array.isArray(LEAGUES) || LEAGUES.length === 0) {
+      box.innerHTML = statusHtml('info', 'Keine Ligen gefunden. Antwortstruktur unbekannt – probier den API-Test-Tab mit <code>/v4/leagues/</code>.');
+      return;
+    }
+    box.innerHTML = '';
+    const list = document.createElement('div');
+    LEAGUES.forEach(lg => {
+      const id = lg.id || lg.i;
+      const name = lg.name || lg.n || id;
+      const el = document.createElement('div');
+      el.dataset.leagueId = id;
+      el.style.padding = '10px 0';
+      el.style.borderBottom = '1px solid var(--border)';
+      el.innerHTML = `<a class="link" onclick="selectLeague('${id}', '${name.replace(/'/g, "\\'")}')">${name}</a> <span class="badge">${id}</span> <span class="active-marker" style="display:none; color: var(--accent); font-size:12px; margin-left:6px;">● aktiv</span>`;
+      list.appendChild(el);
+    });
+    box.appendChild(list);
+  } catch (e) {
+    console.error(e);
+    box.innerHTML = statusHtml('err', 'Fehler beim Laden der Ligen: ' + e.message + '. Details im API-Test-Tab prüfbar.');
+  }
+}
+
+// Expliziter Reload-Button für den Fall, dass der automatische Ladevorgang beim Liga-Wechsel
+// nicht wie erwartet durchläuft — ruft einfach selectLeague() nochmal mit der aktuellen Liga auf.
+async function reloadCurrentLeague() {
+  if (!CURRENT_LEAGUE) return;
+  await selectLeague(CURRENT_LEAGUE, CURRENT_LEAGUE_NAME);
+}
+
+async function selectLeague(id, name) {
+  CURRENT_LEAGUE = id;
+  CURRENT_LEAGUE_NAME = name || id;
+
+  // Caches der vorherigen Liga zurücksetzen — sonst könnten bei einem fehlschlagenden Abruf
+  // (z.B. Kader-Endpunkt down) Daten der alten Liga unter der neuen Liga weiter angezeigt werden.
+  LAST_MARKET_PLAYERS = [];
+  LAST_SQUAD_RAW = null;
+  LEAGUE_MANAGERS = [];
+  LAST_SQUAD_PLAYERS_FOR_RENDER = [];
+  LAST_OWN_SQUAD_PLAYERS = [];
+  HOLD_SELL_REQUESTED = false;
+  CURRENT_BUDGET = null;
+
+  document.getElementById('currentLeagueBadge').style.display = 'inline';
+  document.getElementById('reloadLeagueBtn').style.display = 'inline-block';
+  document.getElementById('currentLeagueName').textContent = CURRENT_LEAGUE_NAME;
+  document.querySelectorAll('#leagueList [data-league-id]').forEach(el => {
+    const isActive = el.dataset.leagueId === String(id);
+    el.querySelector('.active-marker').style.display = isActive ? 'inline' : 'none';
+  });
+
+  // Markt, Kader, Manager sequenziell laden (nicht parallel!) — vermeidet mehrfache
+  // gleichzeitige Kader-/Markt-Requests und die dadurch verursachten Race Conditions.
+  // Start-Tab greift danach auf die bereits geladenen Daten zurück statt sie erneut zu holen.
+  await loadMarket();
+  await loadSquad();
+  await loadManagers();
+  await loadHome();
+}
+
+// ---------- market ----------
+async function loadMarket() {
+  const status = document.getElementById('marketStatus');
+  const box = document.getElementById('marketTable');
+  if (!CURRENT_LEAGUE) {
+    box.innerHTML = '<span class="muted">Wähle zuerst eine Liga oben im Start-Tab.</span>';
+    return;
+  }
+  status.innerHTML = '<span class="spinner"></span> Lade Markt…';
+  box.innerHTML = '';
+  try {
+    const data = await kbFetch(`/v4/leagues/${CURRENT_LEAGUE}/market`);
+    const players = data.players || data.it || data.m || [];
+    LAST_MARKET_PLAYERS = players;
+    status.innerHTML = '';
+    if (!players.length) {
+      box.innerHTML = statusHtml('info', 'Markt geladen, aber keine Spieler in erwarteter Struktur gefunden. Roh-Antwort:') +
+        `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+      return;
+    }
+    renderMarketTable(players);
+    await computeMarketTrends(players, status, () => renderMarketTable(players));
+    populateScenarioSelects();
+  } catch (e) {
+    console.error(e);
+    status.innerHTML = statusHtml('err', 'Fehler beim Laden des Markts: ' + e.message);
+  }
+}
+
+function jumpToValueHistory(playerId) {
+  openValueModal(playerId);
+}
+
+function closeValueModal() {
+  document.getElementById('valueModalOverlay').style.display = 'none';
+}
+
+async function openValueModal(playerId) {
+  const overlay = document.getElementById('valueModalOverlay');
+  const status = document.getElementById('valueModalStatus');
+  const content = document.getElementById('valueModalContent');
+  const cached = PLAYER_CACHE[playerId];
+  document.getElementById('valueModalTitle').innerHTML = cached
+    ? `${avatarHtml(cached)}Marktwert-Verlauf: ${playerName(cached)}`
+    : 'Marktwert-Verlauf';
+  overlay.style.display = 'flex';
+  status.innerHTML = '<span class="spinner"></span> Lade Verlauf…';
+  content.innerHTML = '';
+  const days = 92; // zuverlässigster Zeitraum (siehe Erfahrung mit 30 Tagen: öfter leere Antworten)
+  try {
+    let data = await kbFetch(`/v4/leagues/${CURRENT_LEAGUE}/players/${playerId}/marketvalue/${days}`);
+    let points = data.it || [];
+    if (!points.length) {
+      status.innerHTML = '<span class="spinner"></span> Leere Antwort, versuche erneut…';
+      await new Promise(r => setTimeout(r, 600));
+      data = await kbFetch(`/v4/leagues/${CURRENT_LEAGUE}/players/${playerId}/marketvalue/${days}`);
+      points = data.it || [];
+    }
+    status.innerHTML = '';
+    if (!points.length) {
+      content.innerHTML = statusHtml('info', `Kickbase liefert für diesen Spieler gerade keine Verlaufsdaten (${days} Tage).`) + `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+      return;
+    }
+    const values = points.map(p => p.mv);
+    const min = Math.min(...values), max = Math.max(...values);
+    const w = 700, h = 220, pad = 30;
+    const pts = points.map((p, i) => {
+      const x = pad + (i / (points.length - 1)) * (w - 2 * pad);
+      const y = h - pad - ((p.mv - min) / (max - min || 1)) * (h - 2 * pad);
+      return `${x},${y}`;
+    }).join(' ');
+    const first = points[0].mv, last = points[points.length - 1].mv;
+    const diff = last - first;
+    const diffClass = diff > 0 ? 'trend-up' : diff < 0 ? 'trend-down' : 'muted';
+
+    content.innerHTML = `
+      <div class="row" style="margin-bottom:14px; gap:24px;">
+        <div><div class="muted" style="font-size:12px;">Aktuell</div><div style="font-size:18px;">${fmtMoney(last)}</div></div>
+        <div><div class="muted" style="font-size:12px;">Höchststand (${days}d)</div><div style="font-size:18px;">${fmtMoney(data.hmv ?? max)}</div></div>
+        <div><div class="muted" style="font-size:12px;">Veränderung</div><div class="${diffClass}" style="font-size:18px;">${diff >= 0 ? '+' : ''}${fmtMoney(diff)}</div></div>
+      </div>
+      <svg viewBox="0 0 ${w} ${h}" style="width:100%; height:auto; background: var(--panel-2); border-radius: var(--radius); border: 1px solid var(--border);">
+        <polyline fill="none" stroke="${diff >= 0 ? '#3ddc84' : '#ff5c5c'}" stroke-width="2" points="${pts}" />
+      </svg>
+      ${chartDateAxis(points.length)}
+    `;
+  } catch (e) {
+    console.error(e);
+    status.innerHTML = statusHtml('err', 'Fehler beim Laden des Verlaufs: ' + e.message);
+  }
+}
+
+// ---------- market value history ----------
+function toggleMarketRaw() {
+  const el = document.getElementById('marketRawBox');
+  if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+// Generischer, wiederverwendbarer Sortier-Mechanismus für alle Tabellen außer dem Markt-Tab
+// (der hat seine eigene, ältere Variante — bewusst nicht angefasst, um nichts zu riskieren).
+const TABLE_SORT = {}; // tableKey -> { col, dir }
+
+function setTableSort(tableKey, col, defaultAsc) {
+  const state = TABLE_SORT[tableKey] || (TABLE_SORT[tableKey] = { col: null, dir: 'desc' });
+  if (state.col === col) {
+    state.dir = state.dir === 'asc' ? 'desc' : 'asc';
+  } else {
+    state.col = col;
+    state.dir = defaultAsc ? 'asc' : 'desc';
+  }
+}
+
+// valueGetter(row, col) -> Wert zum Vergleichen; null/undefined landen immer am Ende
+function sortRowsGeneric(tableKey, rows, valueGetter) {
+  const state = TABLE_SORT[tableKey];
+  if (!state || !state.col) return rows;
+  const dir = state.dir === 'asc' ? 1 : -1;
+  return [...rows].sort((a, b) => {
+    const va = valueGetter(a, state.col);
+    const vb = valueGetter(b, state.col);
+    const aEmpty = va === null || va === undefined;
+    const bEmpty = vb === null || vb === undefined;
+    if (aEmpty && bEmpty) return 0;
+    if (aEmpty) return 1;
+    if (bEmpty) return -1;
+    if (typeof va === 'string') return va.localeCompare(vb) * dir;
+    return (va - vb) * dir;
+  });
+}
+
+// Erzeugt einen klickbaren <th>, der setTableSort aufruft und dann rerenderCall (als JS-Ausdruck-String) ausführt
+function genericSortHeader(tableKey, label, col, rerenderCall, defaultAsc, tooltip) {
+  const state = TABLE_SORT[tableKey] || {};
+  const active = state.col === col;
+  const arrow = active ? (state.dir === 'asc' ? ' ▲' : ' ▼') : '';
+  const titleAttr = tooltip ? ` title="${tooltip}"` : ' title="Sortieren"';
+  return `<th style="cursor:pointer; user-select:none;" onclick="setTableSort('${tableKey}','${col}',${!!defaultAsc}); ${rerenderCall}"${titleAttr}>${label}${arrow}</th>`;
+}
+
+let MARKET_SORT = { col: null, dir: 'desc' };
+
+function sortMarketBy(col) {
+  if (MARKET_SORT.col === col) {
+    MARKET_SORT.dir = MARKET_SORT.dir === 'asc' ? 'desc' : 'asc';
+  } else {
+    MARKET_SORT.col = col;
+    MARKET_SORT.dir = col === 'name' ? 'asc' : 'desc'; // Name alphabetisch, Zahlen erstmal absteigend (größte/stärkste zuerst)
+  }
+  renderMarketTable(LAST_MARKET_PLAYERS);
+}
+
+function getMarketSortValue(p, col) {
+  switch (col) {
+    case 'name': return playerName(p).toLowerCase();
+    case 'mv': return p.marketValue ?? p.mv ?? null;
+    case 'trendToday': return p._trendToday;
+    case 'trend7': return p._trend7;
+    case 'price': return p.price ?? p.prc ?? null;
+    default: return null;
+  }
+}
+
+function sortMarketPlayers(players) {
+  if (!MARKET_SORT.col) return players;
+  const col = MARKET_SORT.col;
+  const dir = MARKET_SORT.dir === 'asc' ? 1 : -1;
+  return [...players].sort((a, b) => {
+    const va = getMarketSortValue(a, col);
+    const vb = getMarketSortValue(b, col);
+    const aEmpty = va === null || va === undefined;
+    const bEmpty = vb === null || vb === undefined;
+    if (aEmpty && bEmpty) return 0;
+    if (aEmpty) return 1; // Spieler ohne Wert (z.B. Trend noch nicht berechnet) immer ans Ende
+    if (bEmpty) return -1;
+    if (typeof va === 'string') return va.localeCompare(vb) * dir;
+    return (va - vb) * dir;
+  });
+}
+
+function sortHeader(label, col) {
+  const active = MARKET_SORT.col === col;
+  const arrow = active ? (MARKET_SORT.dir === 'asc' ? ' ▲' : ' ▼') : '';
+  return `<th style="cursor:pointer; user-select:none;" onclick="sortMarketBy('${col}')" title="Sortieren">${label}${arrow}</th>`;
+}
+
+// Realistischer Angebots-Betrag: Marktwert plus ein kleiner Aufschlag, falls der Spieler gerade im
+// Aufwind ist (Annahme: bis der Transfer abgeschlossen ist, vergehen ein paar Tage, in denen der
+// Marktwert bei positivem Trend vermutlich weiter steigt). Bei fallendem/neutralem Trend kein Aufschlag,
+// da der Marktwert selbst schon der realistische Preis ist. Grobe Heuristik, kein exakter Marktpreis.
+function recommendedOffer(p) {
+  const mv = p.marketValue ?? p.mv;
+  if (mv == null) return null;
+  const t1 = p._trendToday;
+  const t7 = p._trend7;
+  // Grundpuffer: echte Ligen haben oft mehr Nachfrage/Konkurrenz als der reine Marktwert-Trend zeigt,
+  // deshalb zusätzlich ein pauschaler Wettbewerbsaufschlag von 5% auf den Marktwert.
+  const competitionPremium = mv * 0.05;
+  if (t1 == null && t7 == null) {
+    return { amount: mv + competitionPremium, basis: 'kein Trend bekannt, Marktwert + 5% Wettbewerbsaufschlag' };
+  }
+  const dailyRate = t1 != null ? t1 : (t7 / 7);
+  if (dailyRate <= 0) {
+    return { amount: mv + competitionPremium, basis: 'Trend fällt/neutral, Marktwert + 5% Wettbewerbsaufschlag' };
+  }
+  const trendBuffer = dailyRate * 5; // ca. 5 Tage Vorlauf bis der Transfer vermutlich abgeschlossen ist
+  return {
+    amount: mv + trendBuffer + competitionPremium,
+    basis: `Marktwert + ca. 5 Tage erwarteter Anstieg (${fmtMoney(dailyRate)}/Tag) + 5% Wettbewerbsaufschlag`
+  };
+}
+
+function renderMarketTable(players) {
+  const box = document.getElementById('marketTable');
+  const sorted = sortMarketPlayers(players);
+  let rows = sorted.map(p => {
+    const mv = p.marketValue ?? p.mv;
+    const price = p.price ?? p.prc;
+    // Marktspieler-Objekte liefern keinen echten Trend-Wert (nur "mvt" als Richtungs-Code);
+    // p._trendToday/_trend7 werden separat über den Marktwert-Verlauf nachberechnet.
+    // WICHTIG: undefined = noch nicht berechnet (Spinner), null = berechnet, aber kein Ergebnis (–)
+    const pending = p._trendToday === undefined;
+    const reco = pending ? null : recommendedOffer(p);
+    return `<tr>
+      <td>${playerCell(p)}</td>
+      <td>${fmtMoney(mv)}</td>
+      <td>${pending ? '<span class="spinner"></span>' : trendBadge(p._trendToday)}</td>
+      <td>${pending ? '<span class="spinner"></span>' : trendBadge(p._trend7)}</td>
+      <td>${price ? fmtMoney(price) : '<span class="muted">–</span>'}</td>
+      <td>${pending ? '<span class="spinner"></span>' : (reco ? `<span title="${reco.basis}">${fmtMoney(reco.amount)}</span>` : '<span class="muted">–</span>')}</td>
+      <td><a class="link" onclick="jumpToValueHistory('${getPid(p)}')">Verlauf</a></td>
+    </tr>`;
+  }).join('');
+  box.innerHTML = `<table>
+    <thead><tr>${sortHeader('Spieler', 'name')}${sortHeader('Marktwert', 'mv')}${sortHeader('Trend (heute)', 'trendToday')}${sortHeader('Trend (7 Tage)', 'trend7')}${sortHeader('Angebotspreis', 'price')}<th title="Grobe Schätzung: Marktwert + Aufschlag bei positivem Trend">Kaufempfehlung</th><th>Verlauf</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>
+  <p class="muted" style="font-size:12px; margin-top:8px;">"Kaufempfehlung" ist ein grob geschätzter, realistischer Angebotsbetrag (Marktwert + Aufschlag bei steigendem Trend, ca. 3 Tage vorausgerechnet), keine Garantie — Mauszeiger über den Betrag zeigt die Berechnungsgrundlage.</p>
+  <div style="margin-top:10px;"><a class="link" onclick="toggleMarketRaw()">Rohdaten anzeigen (ein Spieler)</a></div>
+  <div id="marketRawBox" style="display:none; margin-top:10px;"><pre>${JSON.stringify(players[0], null, 2)}</pre></div>`;
+}
+
+// Berechnet Trend (heute) und 7-Tage-Trend für Marktspieler über den Marktwert-Verlauf,
+// da Markt-Objekte selbst keine tfhmvt/sdmvt-Felder liefern. Ein Zusatz-Request pro NOCH NICHT
+// berechnetem Spieler — bereits berechnete (z.B. beim vorherigen Aufruf) werden übersprungen.
+// 92 statt vorher 8 Tage: das kurze Fenster lieferte zu Saisonbeginn oft zu wenige Punkte für eine
+// belastbare Berechnung (durchgehend leere Ergebnisse).
+async function computeMarketTrends(players, statusEl, onProgress) {
+  const pending = players.filter(p => p._trendToday === undefined);
+  for (let idx = 0; idx < pending.length; idx++) {
+    const p = pending[idx];
+    const pid = getPid(p);
+    if (statusEl) statusEl.innerHTML = `<span class="spinner"></span> Berechne Trends (${idx + 1}/${pending.length})…`;
+    if (!pid) { p._trendToday = null; p._trend7 = null; p._history = null; }
+    else {
+      try {
+        const data = await kbFetch(`/v4/leagues/${CURRENT_LEAGUE}/players/${pid}/marketvalue/92`);
+        const points = data.it || [];
+        if (points.length >= 2) {
+          const idx7 = Math.max(0, points.length - 1 - 7);
+          p._trendToday = points[points.length - 1].mv - points[points.length - 2].mv;
+          p._trend7 = points[points.length - 1].mv - points[idx7].mv;
+          p._history = points.map(pt => pt.mv);
+        } else {
+          p._trendToday = null;
+          p._trend7 = null;
+          p._history = null;
+        }
+      } catch (e) {
+        p._trendToday = null;
+        p._trend7 = null;
+        p._history = null;
+      }
+    }
+    if (onProgress) onProgress(); // sofort sichtbares Update statt erst am Ende (fühlte sich vorher wie "hängengeblieben" an)
+    if (idx < pending.length - 1) await new Promise(r => setTimeout(r, 120));
+  }
+  if (statusEl) statusEl.innerHTML = '';
+}
+
+// ---------- squad ----------
+let LAST_SQUAD_PLAYERS_FOR_RENDER = [];
+let HOLD_SELL_REQUESTED = false;
+
+function squadSortValue(p, col) {
+  const mv = p.marketValue ?? p.mv;
+  const profit = profitVal(p);
+  switch (col) {
+    case 'name': return playerName(p).toLowerCase();
+    case 'buy': return (mv != null && profit != null) ? (mv - profit) : (p.buyPrice ?? p.bp ?? p.purchasePrice ?? p.pp ?? null);
+    case 'mv': return mv ?? null;
+    case 'profit': return profit;
+    case 'trend': return trendVal(p);
+    case 'points': return p.totalPoints ?? p.tp ?? p.points ?? null;
+    default: return null;
+  }
+}
+
+function renderSquadTable(players, rawData) {
+  const box = document.getElementById('squadTable');
+  const sorted = sortRowsGeneric('squad', players, squadSortValue);
+  const rerender = "renderSquadTable(LAST_SQUAD_PLAYERS_FOR_RENDER, LAST_SQUAD_RAW)";
+  let rows = sorted.map(p => {
+    const mv = p.marketValue ?? p.mv;
+    const profit = profitVal(p); // mvgl: Gewinn/Verlust seit Kauf, direkt von Kickbase geliefert
+    const buy = (mv != null && profit != null) ? (mv - profit) : (p.buyPrice ?? p.bp ?? p.purchasePrice ?? p.pp ?? null);
+    const profitClass = profit == null ? 'muted' : profit > 0 ? 'trend-up' : profit < 0 ? 'trend-down' : 'muted';
+    const points = p.totalPoints ?? p.tp ?? p.points;
+    return `<tr>
+      <td>${playerCell(p)}</td>
+      <td>${buy != null ? fmtMoney(buy) : '<span class="muted">–</span>'}</td>
+      <td>${fmtMoney(mv)}</td>
+      <td class="${profitClass}">${profit != null ? (profit >= 0 ? '+' : '') + fmtMoney(profit) : '<span class="muted">–</span>'}</td>
+      <td>${trendBadge(trendVal(p))}</td>
+      <td>${points ?? '–'}</td>
+      <td><a class="link" onclick="jumpToValueHistory('${getPid(p)}')">Verlauf</a></td>
+    </tr>`;
+  }).join('');
+  box.innerHTML = `<table><thead><tr>
+      ${genericSortHeader('squad', 'Spieler', 'name', rerender, true)}
+      ${genericSortHeader('squad', 'Kaufpreis (berechnet)', 'buy', rerender)}
+      ${genericSortHeader('squad', 'Marktwert', 'mv', rerender)}
+      ${genericSortHeader('squad', 'Profit/Verlust', 'profit', rerender)}
+      ${genericSortHeader('squad', 'Trend', 'trend', rerender)}
+      ${genericSortHeader('squad', 'Punkte', 'points', rerender)}
+      <th>Verlauf</th>
+    </tr></thead><tbody>${rows}</tbody></table>
+    <div id="squadRawBox" style="display:none; margin-top:14px;"><pre>${JSON.stringify(rawData, null, 2)}</pre></div>`;
+}
+
+// Halten/Verkaufen-Liste für den Start-Tab
+function holdSellSortValue(p, col) {
+  switch (col) {
+    case 'name': return playerName(p).toLowerCase();
+    case 'mv': return p.marketValue ?? p.mv ?? null;
+    case 'today': return p._trendToday;
+    case 'total': return profitVal(p);
+    case 'reco': {
+      const reco = holdSellRecommendation(p);
+      // feste Reihenfolge zum Sortieren: Verkaufen < Beobachten < Halten
+      const order = { 'Verkaufen': 0, 'Beobachten': 1, 'Halten': 2 };
+      return reco ? order[reco.label] ?? null : null;
+    }
+    default: return null;
+  }
+}
+
+function renderHoldSell() {
+  const box = document.getElementById('holdSellBox');
+  const players = LAST_SQUAD_PLAYERS_FOR_RENDER;
+  if (!players.length) {
+    box.innerHTML = '<span class="muted">Kein Kader geladen.</span>';
+    return;
+  }
+  if (!HOLD_SELL_REQUESTED) {
+    box.innerHTML = '<span class="muted">Kader geladen. Klick auf "Berechnen".</span>';
+    return;
+  }
+  const sorted = sortRowsGeneric('holdSell', players, holdSellSortValue);
+  const rerender = "renderHoldSell()";
+  const rows = sorted.map(p => {
+    const pid = getPid(p);
+    const untouchable = UNTOUCHABLE_PLAYERS.has(String(pid));
+    let cell;
+    if (p._trendToday === undefined) {
+      cell = '<span class="spinner"></span>';
+    } else {
+      const reco = holdSellRecommendation(p);
+      cell = reco ? `<span class="${reco.cls}" title="${reco.reason}">${reco.label}</span>` : '<span class="muted">zu wenig Daten</span>';
+    }
+    const todayCell = p._trendToday === undefined ? '<span class="spinner"></span>' : trendBadge(p._trendToday);
+    return `<tr>
+      <td>${playerCell(p)}</td>
+      <td style="text-align:center;"><input type="checkbox" ${untouchable ? 'checked' : ''} onchange="toggleUntouchable('${pid}')" title="Als unverkäuflich markieren"></td>
+      <td>${fmtMoney(p.marketValue ?? p.mv)}</td>
+      <td>${todayCell}</td>
+      <td>${trendBadge(profitVal(p))}</td>
+      <td>${cell}</td>
+    </tr>`;
+  }).join('');
+  box.innerHTML = `<table><thead><tr>
+      ${genericSortHeader('holdSell', 'Spieler', 'name', rerender, true)}
+      <th>Unverkäuflich</th>
+      ${genericSortHeader('holdSell', 'Marktwert', 'mv', rerender)}
+      ${genericSortHeader('holdSell', 'Tages-Entwicklung', 'today', rerender)}
+      ${genericSortHeader('holdSell', 'Gesamt Gewinn/Verlust', 'total', rerender)}
+      ${genericSortHeader('holdSell', 'Empfehlung', 'reco', rerender, true)}
+    </tr></thead><tbody>${rows}</tbody></table>
+    <p class="muted" style="font-size:12px; margin-top:8px;">Einfache Momentum-Regel auf Basis der letzten Tage (3-Tage- vs. 7-Tage-Schnitt), keine Anlage- oder Spielberatung im eigentlichen Sinn. Mit Haken bei "Unverkäuflich" wird für den Spieler immer "Halten" angezeigt, unabhängig vom Trend.</p>`;
+
+  // Zusammenfassungs-Badges im Verkauf-Dashboard-Kopf
+  const summaryEl = document.getElementById('sellDashboardSummary');
+  if (summaryEl) {
+    const counts = { Verkaufen: 0, Beobachten: 0, Halten: 0 };
+    players.forEach(p => {
+      if (p._trendToday === undefined) return;
+      const reco = holdSellRecommendation(p);
+      if (reco && counts[reco.label] !== undefined) counts[reco.label]++;
+    });
+    const chip = (label, count, cls) => `<div style="text-align:center;">
+        <div class="${cls}" style="font-size:22px; font-weight:700;">${count}</div>
+        <div class="muted" style="font-size:11px;">${label}</div>
+      </div>`;
+    summaryEl.innerHTML = chip('Verkaufen', counts.Verkaufen, 'trend-down') + chip('Beobachten', counts.Beobachten, 'muted') + chip('Halten', counts.Halten, 'trend-up');
+  }
+}
+
+async function loadHoldSellRecommendations() {
+  const statusBox = document.getElementById('holdSellBox');
+  if (!LAST_SQUAD_PLAYERS_FOR_RENDER.length) {
+    statusBox.innerHTML = statusHtml('info', 'Lade zuerst den Kader (Neu laden auf dem Kader-Tab, oder Liga oben neu auswählen).');
+    return;
+  }
+  const players = LAST_SQUAD_PLAYERS_FOR_RENDER;
+  HOLD_SELL_REQUESTED = true;
+  renderHoldSell();
+  await computeMarketTrends(players, null, () => renderHoldSell());
+}
+
+// Automatischer Verkaufsrechner: 5 Strategien, um mit möglichst wenig "Schaden" wieder auf einen
+// Kontostand von mindestens 0 zu kommen. Respektiert die "Unverkäuflich"-Markierungen
+// (UNTOUCHABLE_PLAYERS, gemeinsam mit Halten/Verkaufen genutzt). Nutzt nur bereits geladene
+// Kader-Daten (Marktwert, Punkteschnitt, Trend, Gesamtgewinn/-verlust), keine Zusatz-Requests.
+function computeAutoSellScenarios() {
+  const box = document.getElementById('autoSellScenariosBox');
+  if (CURRENT_BUDGET === null) {
+    box.innerHTML = '<span class="muted">Kontostand konnte nicht geladen werden — oben nochmal versuchen.</span>';
+    return;
+  }
+  if (!LAST_SQUAD_PLAYERS_FOR_RENDER.length) {
+    box.innerHTML = '<span class="muted">Kein Kader geladen.</span>';
+    return;
+  }
+  if (CURRENT_BUDGET >= 0) {
+    box.innerHTML = `<span class="trend-up">Kontostand ist bereits bei ${fmtMoney(CURRENT_BUDGET)}, kein Verkauf nötig.</span>`;
+    return;
+  }
+  const needed = Math.abs(CURRENT_BUDGET);
+  const MIN_SQUAD_SIZE = 11;
+  const totalSquadSize = LAST_SQUAD_PLAYERS_FOR_RENDER.length;
+  const maxSellable = Math.max(0, totalSquadSize - MIN_SQUAD_SIZE);
+  if (maxSellable === 0) {
+    box.innerHTML = `<span class="muted">Dein Kader hat aktuell ${totalSquadSize} Spieler — bei einer Mindestgröße von ${MIN_SQUAD_SIZE} kann nichts verkauft werden, ohne darunter zu fallen.</span>`;
+    return;
+  }
+  const sellable = LAST_SQUAD_PLAYERS_FOR_RENDER.filter(p =>
+    (p.marketValue ?? p.mv) != null && !UNTOUCHABLE_PLAYERS.has(String(getPid(p)))
+  );
+  if (!sellable.length) {
+    box.innerHTML = '<span class="muted">Keine verkäuflichen Spieler übrig — sind alle als unverkäuflich markiert?</span>';
+    return;
+  }
+
+  // Statt fixer Mindestzahlen je Position (die sich gegenseitig ausschließen können, z.B. reichen
+  // 3 ABW nur mit mind. 2 ST, aber bei nur 1 ST bräuchte es mind. 4 ABW) prüfen wir bei jedem
+  // Verkaufskandidaten direkt, ob mit dem verbleibenden Kader noch WIRKLICH eine der 7 Formationen
+  // spielbar wäre — das ist die einzig korrekte Prüfung, weil sie exakt dieselbe Logik nutzt wie
+  // die Aufstellungsberechnung selbst.
+  function lineupFeasibleAfterSelling(soldList) {
+    const soldIds = new Set(soldList.map(p => String(getPid(p))));
+    const remaining = LAST_SQUAD_PLAYERS_FOR_RENDER.filter(p => !soldIds.has(String(getPid(p))));
+    return computeBestLineup(remaining) != null;
+  }
+
+  // Greedy: nach Strategie sortieren, so lange verkaufen bis der Zielbetrag erreicht ist —
+  // aber nie mehr als maxSellable, damit mindestens MIN_SQUAD_SIZE Spieler im Kader bleiben.
+  function buildScenario(sortFn) {
+    const sorted = [...sellable].sort(sortFn);
+    const chosen = [];
+    let sum = 0;
+    let blockedByLineup = false;
+    const usedIds = new Set();
+    for (const p of sorted) {
+      if (sum >= needed) break;
+      if (chosen.length >= maxSellable) break;
+      if (!lineupFeasibleAfterSelling([...chosen, p])) { blockedByLineup = true; continue; } // würde keine spielbare Aufstellung mehr übrig lassen, diesen Spieler überspringen
+      chosen.push(p);
+      usedIds.add(String(getPid(p)));
+      sum += (p.marketValue ?? p.mv);
+    }
+
+    // Feinschliff: jeden gewählten Spieler so lange gegen einen günstigeren Ersatz tauschen (einzelner
+    // Spieler ODER ein Paar aus zwei kleineren Spielern zusammen), wie das den Zielbetrag weiterhin
+    // erreicht UND weiterhin eine spielbare Aufstellung übrig lässt — minimiert den Überschuss über 0,
+    // statt stur bei der ersten ausreichenden Kombination stehen zu bleiben.
+    if (sum >= needed && chosen.length > 0) {
+      let improved = true;
+      while (improved) {
+        improved = false;
+        for (let i = 0; i < chosen.length; i++) {
+          const current = chosen[i];
+          const currentValue = current.marketValue ?? current.mv;
+          const sumWithoutCurrent = sum - currentValue;
+          const otherChosen = chosen.filter((_, idx) => idx !== i);
+
+          let bestSingle = null;
+          for (const cand of sellable) {
+            const pid = String(getPid(cand));
+            if (usedIds.has(pid)) continue;
+            const value = cand.marketValue ?? cand.mv;
+            if (value == null || value >= currentValue) continue; // nur echte Verbesserungen
+            if (sumWithoutCurrent + value < needed) continue; // würde nicht mehr ausreichen
+            if (!lineupFeasibleAfterSelling([...otherChosen, cand])) continue;
+            if (!bestSingle || value < bestSingle.value) bestSingle = { items: [cand], value };
+          }
+
+          let bestPair = null;
+          if (chosen.length < maxSellable) { // Paar ersetzt 1 Spieler durch 2, braucht also einen freien Slot
+            const unused = sellable.filter(c => !usedIds.has(String(getPid(c))));
+            for (let a = 0; a < unused.length; a++) {
+              for (let b = a + 1; b < unused.length; b++) {
+                const c1 = unused[a], c2 = unused[b];
+                const v1 = c1.marketValue ?? c1.mv, v2 = c2.marketValue ?? c2.mv;
+                if (v1 == null || v2 == null) continue;
+                const combined = v1 + v2;
+                if (combined >= currentValue) continue; // nur echte Verbesserungen
+                if (sumWithoutCurrent + combined < needed) continue;
+                if (!lineupFeasibleAfterSelling([...otherChosen, c1, c2])) continue;
+                if (!bestPair || combined < bestPair.value) bestPair = { items: [c1, c2], value: combined };
+              }
+            }
+          }
+
+          let best = null;
+          if (bestSingle && bestPair) best = bestSingle.value <= bestPair.value ? bestSingle : bestPair;
+          else best = bestSingle || bestPair;
+
+          if (best) {
+            chosen.splice(i, 1, ...best.items);
+            usedIds.delete(String(getPid(current)));
+            best.items.forEach(it => usedIds.add(String(getPid(it))));
+            sum = sumWithoutCurrent + best.value;
+            improved = true;
+            break; // Indizes haben sich durch splice verschoben, äußere Schleife läuft nochmal
+          }
+        }
+      }
+    }
+
+    const reachedGoal = sum >= needed;
+    return {
+      chosen, sum, reachedGoal,
+      hitSquadLimit: !reachedGoal && chosen.length >= maxSellable,
+      hitPositionLimit: !reachedGoal && chosen.length < maxSellable && blockedByLineup
+    };
+  }
+
+  // Exakte Lösung per Brute-Force über alle Teilmengen: findet garantiert die Kombination mit dem
+  // kleinsten Überschuss über 0 (nicht nur eine gute Näherung wie die 5 Strategien oben). Bei sehr
+  // vielen verkäuflichen Spielern (>22) würde das zu lange dauern, dann Rückgriff auf das beste der
+  // 5 Heuristik-Ergebnisse als Ersatz.
+  function computeExactOptimal(fallbackBest) {
+    const n = sellable.length;
+    const MAX_BRUTEFORCE_N = 20; // Aufstellungs-Check pro Kombination ist teurer als eine reine Zahlen-Prüfung, daher etwas konservativer als vorher
+    if (n === 0) return { chosen: [], sum: 0, reachedGoal: false, hitSquadLimit: false, hitPositionLimit: false, exact: true };
+    if (n > MAX_BRUTEFORCE_N) {
+      return fallbackBest ? { ...fallbackBest, exact: false } : { chosen: [], sum: 0, reachedGoal: false, hitSquadLimit: false, hitPositionLimit: false, exact: false };
+    }
+    let bestMask = -1, bestSum = Infinity;
+    for (let mask = 1; mask < (1 << n); mask++) {
+      let count = 0, sum = 0, valid = true;
+      const soldList = [];
+      for (let i = 0; i < n; i++) {
+        if (mask & (1 << i)) {
+          count++;
+          if (count > maxSellable) { valid = false; break; }
+          const p = sellable[i];
+          sum += (p.marketValue ?? p.mv);
+          soldList.push(p);
+          if (sum >= bestSum) { valid = false; break; } // Pruning: schon schlechter als bisheriges Optimum
+        }
+      }
+      if (!valid || sum < needed) continue;
+      if (!lineupFeasibleAfterSelling(soldList)) continue; // echter Aufstellungs-Check statt Positions-Zahlen
+      if (sum < bestSum) { bestSum = sum; bestMask = mask; }
+    }
+    if (bestMask === -1) {
+      return { chosen: [], sum: 0, reachedGoal: false, hitSquadLimit: false, hitPositionLimit: false, exact: true };
+    }
+    const chosen = [];
+    for (let i = 0; i < n; i++) if (bestMask & (1 << i)) chosen.push(sellable[i]);
+    return { chosen, sum: bestSum, reachedGoal: true, hitSquadLimit: false, hitPositionLimit: false, exact: true };
+  }
+
+  const scenarios = [
+    {
+      title: 'Wenige Transaktionen',
+      desc: 'Verkauft die wertvollsten Spieler zuerst, um mit möglichst wenigen Verkäufen auf 0 zu kommen.',
+      result: buildScenario((a, b) => (b.marketValue ?? b.mv) - (a.marketValue ?? a.mv))
+    },
+    {
+      title: 'Punkte schonen',
+      desc: 'Verkauft zuerst Spieler mit dem niedrigsten Punkteschnitt, damit möglichst wenig Punktepotenzial verloren geht.',
+      result: buildScenario((a, b) => (avgPoints(a) ?? 0) - (avgPoints(b) ?? 0))
+    },
+    {
+      title: 'Trend nutzen',
+      desc: 'Verkauft zuerst Spieler, deren Marktwert gerade am stärksten fällt (Verluste begrenzen), lässt steigende Spieler in Ruhe.',
+      result: buildScenario((a, b) => (trendVal(a) ?? 0) - (trendVal(b) ?? 0))
+    },
+    {
+      title: 'Gewinn realisieren',
+      desc: 'Verkauft zuerst Spieler mit dem höchsten Gesamtgewinn seit Kauf, um Profite mitzunehmen.',
+      result: buildScenario((a, b) => (profitVal(b) ?? -Infinity) - (profitVal(a) ?? -Infinity))
+    },
+    {
+      title: 'Verlust begrenzen',
+      desc: 'Verkauft zuerst Spieler mit dem größten Gesamtverlust seit Kauf, um weitere Verluste zu vermeiden.',
+      result: buildScenario((a, b) => (profitVal(a) ?? Infinity) - (profitVal(b) ?? Infinity))
+    }
+  ];
+
+  // Bestes bisheriges Ergebnis als Fallback für den Fall, dass Brute-Force zu groß wird
+  const bestHeuristic = scenarios
+    .map(s => s.result)
+    .filter(r => r.reachedGoal)
+    .sort((a, b) => a.sum - b.sum)[0];
+  const exactResult = computeExactOptimal(bestHeuristic);
+  scenarios.push({
+    title: exactResult.exact ? 'Optimal (exakt)' : 'Optimal (Näherung)',
+    desc: exactResult.exact
+      ? 'Rechnet alle möglichen Kombinationen durch und findet garantiert die Kombination mit dem kleinsten Überschuss über 0.'
+      : 'Zu viele verkäufliche Spieler für eine exakte Berechnung — zeigt stattdessen das beste Ergebnis der 5 Strategien oben.',
+    result: exactResult
+  });
+
+  const reachedResults = scenarios.map(s => s.result).filter(r => r.reachedGoal);
+  const bestSum = reachedResults.length ? Math.min(...reachedResults.map(r => r.sum)) : null;
+
+  const cards = scenarios.map(s => {
+    const { chosen, sum, reachedGoal, hitSquadLimit, hitPositionLimit } = s.result;
+    const newBudget = CURRENT_BUDGET + sum;
+    const lostPoints = chosen.reduce((acc, p) => acc + (avgPoints(p) ?? 0), 0);
+    const isBest = reachedGoal && bestSum !== null && sum === bestSum;
+    const barPct = reachedGoal ? Math.max(4, Math.min(100, (needed / sum) * 100)) : 0;
+    const chips = chosen.length
+      ? `<div class="row" style="gap:6px; flex-wrap:wrap; margin-top:12px;">${chosen.map(p => `<span class="badge">${avatarHtml(p)}${playerName(p)} · ${fmtMoney(p.marketValue ?? p.mv)}</span>`).join('')}</div>`
+      : '<p class="muted" style="font-size:12px; margin-top:12px;">Keine Spieler nötig.</p>';
+    const soldIds = new Set(chosen.map(p => String(getPid(p))));
+    const remainingSquad = LAST_SQUAD_PLAYERS_FOR_RENDER.filter(p => !soldIds.has(String(getPid(p))));
+    const remainingPosCounts = {};
+    remainingSquad.forEach(p => { const l = posLabel(p); remainingPosCounts[l] = (remainingPosCounts[l] ?? 0) + 1; });
+    const remainingPosSummary = ['TW', 'ABW', 'MF', 'ST'].map(l => `${remainingPosCounts[l] ?? 0} ${l}`).join(' · ');
+    const lineup = computeBestLineup(remainingSquad);
+    const lineupHtml = lineup
+      ? `<div style="margin-top:14px; padding-top:14px; border-top:1px solid var(--border);">
+          <div class="row" style="justify-content: space-between; align-items:center; margin-bottom:10px;">
+            <span class="muted" style="font-size:11px; text-transform:uppercase; letter-spacing:0.5px;">Beste Aufstellung danach</span>
+            <span class="badge">${lineup.formation.def}-${lineup.formation.mid}-${lineup.formation.fwd} · Ø ${lineup.total.toFixed(1)}</span>
+          </div>
+          ${splitStartersByPosition(lineup.starters, lineup.formation).map(([label, list]) => `
+            <div class="row" style="gap:6px; align-items:center; margin-bottom:6px;">
+              <span class="muted" style="font-size:11px; width:32px; flex-shrink:0;">${label}</span>
+              <div class="row" style="gap:6px; flex-wrap:wrap;">${list.map(p => `<span class="badge">${avatarHtml(p)}${playerName(p)}</span>`).join('')}</div>
+            </div>`).join('')}
+        </div>`
+      : '<p class="muted" style="font-size:12px; margin-top:14px; padding-top:14px; border-top:1px solid var(--border);">Keine gültige Aufstellung mit dem verbleibenden Kader möglich.</p>';
+    return `<div style="background: var(--panel-2); border: 1px solid ${isBest ? 'var(--accent)' : 'var(--border)'}; border-radius: var(--radius); padding: 18px; ${isBest ? 'box-shadow: 0 0 0 1px var(--accent);' : ''}">
+      <div class="row" style="justify-content: space-between; align-items:flex-start; gap:8px;">
+        <h3 style="margin:0; font-size:15px;">${s.title}</h3>
+        ${isBest ? '<span class="badge" style="background: var(--accent); color:#08130d; border:none; white-space:nowrap;">Beste Lösung</span>' : ''}
+      </div>
+      <p class="muted" style="font-size:12px; margin: 6px 0 14px;">${s.desc}</p>
+      <div class="${newBudget >= 0 ? 'trend-up' : 'trend-down'}" style="font-size:26px; font-weight:700; line-height:1.2;">${fmtMoney(newBudget)}</div>
+      <div class="muted" style="font-size:11px; margin-bottom:10px;">Neuer Kontostand</div>
+      <div style="height:6px; background: var(--border); border-radius:3px; overflow:hidden; margin-bottom:14px;">
+        <div style="height:100%; width:${barPct}%; background: var(--accent);"></div>
+      </div>
+      <div class="row" style="gap:20px;">
+        <div><div class="muted" style="font-size:11px;">Erlös</div><div>${fmtMoney(sum)}</div></div>
+        <div><div class="muted" style="font-size:11px;">Überschuss</div><div>${reachedGoal ? fmtMoney(sum - needed) : '–'}</div></div>
+        <div><div class="muted" style="font-size:11px;">Punkteschnitt-Δ</div><div>${lostPoints ? '-' + lostPoints : '0'}</div></div>
+      </div>
+      <div class="row" style="gap:20px; margin-top:10px;">
+        <div><div class="muted" style="font-size:11px;">Kader danach</div><div>${remainingSquad.length} Spieler</div></div>
+        <div><div class="muted" style="font-size:11px;">Je Position</div><div>${remainingPosSummary}</div></div>
+      </div>
+      ${!reachedGoal ? statusHtml('info', hitSquadLimit
+          ? `Mindestkadergröße von ${MIN_SQUAD_SIZE} Spielern erreicht — es fehlen noch ${fmtMoney(needed - sum)}.`
+          : hitPositionLimit
+            ? `Weitere Verkäufe würden keine spielbare Formation mehr übrig lassen — es fehlen noch ${fmtMoney(needed - sum)}.`
+            : 'Reicht nicht aus, um auf 0 zu kommen.') : chips}
+      ${lineupHtml}
+    </div>`;
+  }).join('');
+  box.innerHTML = `<div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:16px;">${cards}</div>`;
+}
+
+async function loadSquad() {
+  const status = document.getElementById('squadStatus');
+  const box = document.getElementById('squadTable');
+  if (!CURRENT_LEAGUE) {
+    box.innerHTML = '<span class="muted">Wähle zuerst eine Liga oben im Start-Tab.</span>';
+    return;
+  }
+  status.innerHTML = '<span class="spinner"></span> Lade Kader…';
+  box.innerHTML = '';
+  HOLD_SELL_REQUESTED = false; // neue Spieler-Objekte nach Reload haben noch keine berechneten Trend-/Verlaufsdaten
+  let lastErr = null;
+  for (const path of squadPathAttempts()) {
+    try {
+      const data = await kbFetch(path);
+      LAST_SQUAD_RAW = data;
+      status.innerHTML = statusHtml('ok', `Geladen über <code>${path}</code> — falls Kaufpreis/Profit unten falsch oder leer wirkt: <a class="link" onclick="toggleSquadRaw()">Rohdaten anzeigen</a> und mir die tatsächlichen Feldnamen schicken.`);
+      const players = data.players || data.it || data.pl || [];
+      if (!players.length) {
+        box.innerHTML = `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+        return;
+      }
+      LAST_SQUAD_PLAYERS_FOR_RENDER = players;
+      renderSquadTable(players, data);
+      renderFormComparison(players);
+      renderHoldSell();
+      populateScenarioSelects();
+      return;
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  status.innerHTML = statusHtml('info', 'Kein Kader-Endpunkt hat funktioniert (probiert: ' + squadPathAttempts().join(', ') + '). Letzter Fehler: ' + lastErr.message + '. Nutze den API-Test-Tab, um den richtigen Pfad zu finden — sobald wir ihn haben, trage ich ihn fest ein.');
+}
+
+function toggleSquadRaw() {
+  const el = document.getElementById('squadRawBox');
+  if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+// ---------- Formvergleich ----------
+let LAST_FORM_COMPARISON_PLAYERS = [];
+
+function formComparisonSortValue(p, col) {
+  switch (col) {
+    case 'name': return playerName(p).toLowerCase();
+    case 'avg': return avgPoints(p);
+    case 'total': return totalPoints(p);
+    case 'mv': return p.marketValue ?? p.mv ?? null;
+    case 'trend': return trendVal(p);
+    default: return null;
+  }
+}
+
+function renderFormComparison(players) {
+  if (players) LAST_FORM_COMPARISON_PLAYERS = players;
+  const box = document.getElementById('formComparisonBox');
+  const withPoints = LAST_FORM_COMPARISON_PLAYERS.filter(p => avgPoints(p) != null);
+  if (!withPoints.length) {
+    box.innerHTML = '<span class="muted">Kein Punkteschnitt-Feld im Kader gefunden — evtl. anderer Feldname. Rohdaten im Kader oben checken.</span>';
+    return;
+  }
+  const groups = {};
+  withPoints.forEach(p => {
+    const label = posLabel(p);
+    (groups[label] = groups[label] || []).push(p);
+  });
+  const order = ['TW', 'ABW', 'MF', 'ST', '?'];
+  const rerender = "renderFormComparison(null)";
+  const headerRow = `<tr>
+      ${genericSortHeader('formComparison', 'Spieler', 'name', rerender, true)}
+      ${genericSortHeader('formComparison', 'Punkteschnitt', 'avg', rerender)}
+      ${genericSortHeader('formComparison', 'Gesamtpunkte', 'total', rerender)}
+      ${genericSortHeader('formComparison', 'Marktwert', 'mv', rerender)}
+      ${genericSortHeader('formComparison', 'Trend', 'trend', rerender)}
+    </tr>`;
+  let html = '';
+  order.filter(k => groups[k]).forEach(label => {
+    const state = TABLE_SORT['formComparison'];
+    const sorted = (state && state.col)
+      ? sortRowsGeneric('formComparison', groups[label], formComparisonSortValue)
+      : [...groups[label]].sort((a, b) => avgPoints(b) - avgPoints(a)); // Standard: bester Punkteschnitt zuerst
+    const rows = sorted.map(p => `<tr>
+        <td>${playerCell(p)}</td>
+        <td>${avgPoints(p)}</td>
+        <td>${totalPoints(p) ?? '–'}</td>
+        <td>${fmtMoney(p.marketValue ?? p.mv)}</td>
+        <td>${trendBadge(trendVal(p))}</td>
+      </tr>`).join('');
+    html += `<h3 style="font-size:13px; margin-top:16px;">${label}</h3>
+      <table><thead>${headerRow}</thead><tbody>${rows}</tbody></table>`;
+  });
+  box.innerHTML = html;
+}
+
+// ---------- Aufstellungs-Optimierer ----------
+// Gängige Kickbase-Formationen (Abwehr-Mittelfeld-Sturm, plus 1 Torwart = 11 Spieler)
+// Die 10 offiziellen Kickbase-Formationen (1 TW fest + 10 Feldspieler). Kickbase-Rahmen: ABW min 3
+// max 5, MF min 2 max 6, ST min 1 max 4. Vorher hatte ich nur 7 Formationen und fälschlich MF min 3
+// angenommen — 4-3-3 mit 6 MF (z.B. 3-6-1) fehlte komplett, das hat die Verkaufsrechner-Prüfung
+// unnötig verschärft.
+const FORMATIONS = [
+  { def: 4, mid: 3, fwd: 3 },
+  { def: 3, mid: 4, fwd: 3 },
+  { def: 3, mid: 5, fwd: 2 },
+  { def: 4, mid: 4, fwd: 2 },
+  { def: 4, mid: 5, fwd: 1 },
+  { def: 5, mid: 3, fwd: 2 },
+  { def: 5, mid: 4, fwd: 1 },
+  { def: 3, mid: 6, fwd: 1 },
+  { def: 4, mid: 2, fwd: 4 },
+  { def: 3, mid: 3, fwd: 4 }
+];
+
+// Kernlogik der Aufstellungsberechnung, wiederverwendbar für den Kader-Tab und die Verkaufsszenarien
+// (dort für den jeweils verbleibenden Kader nach dem hypothetischen Verkauf)
+// Teilt die Startelf (immer in Reihenfolge TW, ABW, MF, ST aufgebaut) anhand der Formation in
+// Gruppen auf, damit Aufstellungen zeilenweise nach Position dargestellt werden können.
+function splitStartersByPosition(starters, formation) {
+  let idx = 0;
+  const tw = starters.slice(idx, idx + 1); idx += 1;
+  const abw = starters.slice(idx, idx + formation.def); idx += formation.def;
+  const mf = starters.slice(idx, idx + formation.mid); idx += formation.mid;
+  const st = starters.slice(idx, idx + formation.fwd);
+  return [['TW', tw], ['ABW', abw], ['MF', mf], ['ST', st]];
+}
+
+function computeBestLineup(players) {
+  // Spieler ohne Punkteschnitt (z.B. noch kein Spiel diese Saison) fliegen NICHT mehr komplett raus,
+  // sonst kann früh in der Saison plötzlich keine Formation mehr aufstellbar sein, obwohl positionell
+  // genug Spieler da wären. Sie zählen mit 0 Punkten, können aber trotzdem einen Platz füllen.
+  const withPos = players.filter(p => getPos(p) != null);
+  if (!withPos.length) return null;
+  const byPos = { 1: [], 2: [], 3: [], 4: [] };
+  withPos.forEach(p => { if (byPos[getPos(p)]) byPos[getPos(p)].push(p); });
+  Object.values(byPos).forEach(arr => arr.sort((a, b) => (avgPoints(b) ?? 0) - (avgPoints(a) ?? 0)));
+  if (!byPos[1].length) return null;
+
+  let best = null;
+  for (const f of FORMATIONS) {
+    if (byPos[2].length < f.def || byPos[3].length < f.mid || byPos[4].length < f.fwd) continue; // Kader zu klein für diese Formation
+    const starters = [
+      byPos[1][0],
+      ...byPos[2].slice(0, f.def),
+      ...byPos[3].slice(0, f.mid),
+      ...byPos[4].slice(0, f.fwd)
+    ];
+    const total = starters.reduce((sum, p) => sum + (avgPoints(p) ?? 0), 0);
+    if (!best || total > best.total) best = { formation: f, starters, total };
+  }
+  return best;
+}
+
+function computeAndRenderLineup() {
+  const box = document.getElementById('lineupBox');
+  const players = getCachedSquadPlayers();
+  const withPos = players.filter(p => getPos(p) != null);
+  if (!withPos.length) {
+    box.innerHTML = '<span class="muted">Kein Kader mit erkennbarer Position geladen — geh oben auf "Neu laden".</span>';
+    return;
+  }
+  const best = computeBestLineup(players);
+  if (!best) {
+    box.innerHTML = '<span class="muted">Kein Torwart im Kader gefunden oder keine passende Formation — Aufstellung kann nicht berechnet werden.</span>';
+    return;
+  }
+
+  const starterIds = new Set(best.starters.map(getPid));
+  const bench = withPos.filter(p => !starterIds.has(getPid(p))).sort((a, b) => (avgPoints(b) ?? 0) - (avgPoints(a) ?? 0));
+
+  const rows = (list) => list.map(p => `<tr>
+    <td>${posLabel(p)}</td>
+    <td>${playerCell(p)}</td>
+    <td>${avgPoints(p) ?? '–'}</td>
+    <td>${fmtMoney(p.marketValue ?? p.mv)}</td>
+  </tr>`).join('');
+
+  const starterGroups = splitStartersByPosition(best.starters, best.formation);
+  const starterRows = starterGroups.map(([label, list]) => `
+    <tr><td colspan="3" style="padding-top:14px; padding-bottom:6px; font-weight:600; color: var(--accent); border-bottom:none;">${label} (${list.length})</td></tr>
+    ${list.map(p => `<tr><td>${playerCell(p)}</td><td>${avgPoints(p) ?? '–'}</td><td>${fmtMoney(p.marketValue ?? p.mv)}</td></tr>`).join('')}
+  `).join('');
+
+  box.innerHTML = `
+    <div class="row" style="gap:24px; margin-bottom:14px;">
+      <div><div class="muted" style="font-size:12px;">Formation</div><div style="font-size:18px;">${best.formation.def}-${best.formation.mid}-${best.formation.fwd}</div></div>
+      <div><div class="muted" style="font-size:12px;">Punkteschnitt Summe (Startelf)</div><div style="font-size:18px;">${best.total.toFixed(1)}</div></div>
+    </div>
+    <h3 style="font-size:13px;">Startelf</h3>
+    <table><thead><tr><th>Spieler</th><th>Punkteschnitt</th><th>Marktwert</th></tr></thead><tbody>${starterRows}</tbody></table>
+    <h3 style="font-size:13px; margin-top:16px;">Bank</h3>
+    <table><thead><tr><th>Pos</th><th>Spieler</th><th>Punkteschnitt</th><th>Marktwert</th></tr></thead><tbody>${rows(bench)}</tbody></table>
+  `;
+}
+
+// ---------- Szenario-Rechner ----------
+// Erzeugt pro Szenario 5 einzelne Dropdowns (nur Verkaufen, aus dem eigenen Kader) und
+// wertet live aus, sobald sich eine Auswahl ändert.
+function populateScenarioSelects() {
+  const squad = getCachedSquadPlayers();
+  ['A', 'B', 'C'].forEach(letter => {
+    const container = document.getElementById(`scenario${letter}Slots`);
+    if (!container) return;
+    const prevValues = [1, 2, 3, 4, 5].map(n => {
+      const el = document.getElementById(`scenario${letter}Slot${n}`);
+      return el ? el.value : '';
+    });
+    const options = squad.map(p => `<option value="${getPid(p)}">${playerName(p)} — ${fmtMoney(p.marketValue ?? p.mv)}</option>`).join('');
+    container.innerHTML = [1, 2, 3, 4, 5].map(n => `
+      <select id="scenario${letter}Slot${n}" onchange="evalAllScenarios()" style="width:100%; margin-bottom:8px; font-size:13px;">
+        <option value="">– Spieler ${n} –</option>
+        ${options}
+      </select>`).join('');
+    [1, 2, 3, 4, 5].forEach((n, i) => {
+      const el = document.getElementById(`scenario${letter}Slot${n}`);
+      if (el && prevValues[i] && [...el.options].some(o => o.value === prevValues[i])) el.value = prevValues[i];
+    });
+  });
+}
+
+function evalScenario(letter) {
+  const squad = getCachedSquadPlayers();
+  const ids = [1, 2, 3, 4, 5]
+    .map(n => document.getElementById(`scenario${letter}Slot${n}`)?.value)
+    .filter(v => v); // leere Slots raus
+  const uniqueIds = [...new Set(ids)]; // falls versehentlich derselbe Spieler mehrfach gewählt wird
+  const players = squad.filter(p => uniqueIds.includes(String(getPid(p))));
+
+  const sum = players.reduce((a, p) => a + (p.marketValue ?? p.mv ?? 0), 0);
+  const newBudget = (CURRENT_BUDGET ?? 0) + sum;
+  const pointsSum = players.reduce((a, p) => a + (avgPoints(p) ?? 0), 0);
+  const result = { letter, players, sum, newBudget, pointsSum };
+
+  const resultBox = document.getElementById(`scenario${letter}Result`);
+  const chips = players.length
+    ? `<div class="row" style="gap:6px; flex-wrap:wrap; margin-bottom:10px;">${players.map(p => `<span class="badge">${playerName(p)}</span>`).join('')}</div>`
+    : '<p class="muted" style="font-size:12px;">Noch keine Spieler ausgewählt.</p>';
+  resultBox.innerHTML = `
+    ${chips}
+    <div style="font-size:22px; font-weight:600;">${fmtMoney(sum)}</div>
+    <div class="muted" style="font-size:12px; margin-bottom:8px;">Erlös (Summe Marktwert)</div>
+    <div class="row" style="gap:20px;">
+      <div><div class="muted" style="font-size:11px;">Neuer Kontostand</div><div class="${newBudget >= 0 ? 'trend-up' : 'trend-down'}" style="font-weight:600;">${fmtMoney(newBudget)}</div></div>
+      <div><div class="muted" style="font-size:11px;">Punkteschnitt</div><div style="font-weight:600;">${pointsSum || '–'}</div></div>
+    </div>
+  `;
+  return result;
+}
+
+function evalAllScenarios() {
+  if (CURRENT_BUDGET === null) {
+    document.getElementById('scenarioComparisonBox').innerHTML = statusHtml('info', 'Kontostand ist noch nicht geladen — einmal auf dem Start-Tab laden.');
+  }
+  const results = ['A', 'B', 'C'].map(evalScenario);
+  const box = document.getElementById('scenarioComparisonBox');
+  const cells = results.map(r => `
+    <div style="flex:1; min-width:160px; text-align:center; padding:10px; background: var(--panel-2); border-radius: var(--radius); border: 1px solid var(--border);">
+      <div class="muted" style="font-size:11px; text-transform:uppercase;">Szenario ${r.letter}</div>
+      <div class="${r.newBudget >= 0 ? 'trend-up' : 'trend-down'}" style="font-size:20px; font-weight:700; margin-top:4px;">${fmtMoney(r.newBudget)}</div>
+      <div class="muted" style="font-size:11px; margin-top:2px;">Punkteschnitt: ${r.pointsSum || '–'}</div>
+    </div>`).join('');
+  box.innerHTML = `<div class="row" style="gap:12px;">${cells}</div>`;
+}
+
+// ---------- other managers ----------
+// Marktwert-Trend (heute), 7-Tage-Trend und Gewinn/Verlust je Spieler
+function trendVal(p) { return p.tfhmvt ?? p.marketValueTrend ?? null; }
+// Position (1=TW, 2=ABW, 3=MF, 4=ST — Zuordnung aus Beobachtung, nicht offiziell dokumentiert)
+const POS_LABELS = { 1: 'TW', 2: 'ABW', 3: 'MF', 4: 'ST' };
+function getPos(p) { return p.position ?? p.pos ?? p.ps ?? null; }
+function posLabel(p) { return POS_LABELS[getPos(p)] || '?'; }
+function avgPoints(p) { return p.averagePoints ?? p.ap ?? p.avgPoints ?? null; }
+function totalPoints(p) { return p.totalPoints ?? p.tp ?? p.points ?? p.p ?? null; }
+function trend7Val(p) { return p.sdmvt ?? null; }
+function profitVal(p) { return p.mvgl ?? null; }
+function trendBadge(val) {
+  if (val === null || val === undefined) return '<span class="muted">–</span>';
+  const cls = val > 0 ? 'trend-up' : val < 0 ? 'trend-down' : 'muted';
+  const sign = val > 0 ? '▲' : val < 0 ? '▼' : '–';
+  return `<span class="${cls}">${sign} ${fmtMoney(Math.abs(val))}</span>`;
+}
+
+// Baut eine Zeile mit 5 Datums-Labels unter einem Verlaufs-Chart. Nimmt an, dass der letzte Punkt
+// "heute" ist und die Punkte davor täglich zurückreichen (Kickbase liefert kein zuverlässiges
+// Datumsfeld pro Punkt, das ist daher eine Annäherung, keine exakte Kalender-Zuordnung).
+function chartDateAxis(pointCount) {
+  if (pointCount < 2) return '';
+  const today = new Date();
+  const fracs = [0, 0.25, 0.5, 0.75, 1];
+  const labels = fracs.map(f => {
+    const idx = Math.round(f * (pointCount - 1));
+    const d = new Date(today);
+    d.setDate(d.getDate() - (pointCount - 1 - idx));
+    return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
+  });
+  return `<div class="row muted" style="justify-content: space-between; margin-top:6px; font-size:11px;">
+    ${labels.map(l => `<span>${l}</span>`).join('')}
+  </div>`;
+}
+
+// Einfache Momentum-Heuristik auf Basis der letzten Tages-Werte (p._history, aus computeMarketTrends).
+// KEINE Finanz-/Spielberatung im eigentlichen Sinn, nur ein grobes Signal: fällt der Marktwert seit
+// mind. 2 Tagen -> "Verkaufen" (Verlust begrenzen). Ist der Spieler im Gewinn, aber der Anstieg wird
+// von Tag zu Tag flacher -> "Verkaufen" (Gewinn mitnehmen, bevor die Kurve kippt). Steigt er weiter
+// gleich stark oder stärker -> "Halten". Bei zu wenig Daten oder uneindeutigem Muster -> "Beobachten".
+const UNTOUCHABLE_PLAYERS = new Set(); // Spieler-IDs, die der Nutzer als "nicht verkäuflich" markiert hat
+
+function toggleUntouchable(pid) {
+  const key = String(pid);
+  if (UNTOUCHABLE_PLAYERS.has(key)) UNTOUCHABLE_PLAYERS.delete(key);
+  else UNTOUCHABLE_PLAYERS.add(key);
+  renderHoldSell();
+}
+
+// Robustere Momentum-Analyse: vergleicht den Schnitt der letzten 3 Tage mit dem Schnitt der letzten
+// 7 Tage, statt nur zwei einzelne Tage zu vergleichen (das reagierte auf normales Rauschen zu
+// nervös und hat "Verkaufen" empfohlen, obwohl der Spieler nur kurz langsamer stieg, insgesamt aber
+// weiter im Aufwind war). "Verkaufen" gibt's jetzt erst, wenn das Wachstum wirklich gegen null geht
+// oder negativ ist — nicht schon beim bloßen Abflachen.
+function holdSellRecommendation(p) {
+  if (UNTOUCHABLE_PLAYERS.has(String(getPid(p)))) {
+    return { label: 'Halten', reason: 'Als unverkäuflich markiert', cls: 'trend-up' };
+  }
+  const h = p._history;
+  if (!h || h.length < 8) return null;
+  const n = h.length;
+  const mv = h[n - 1];
+  const deltas = [];
+  for (let i = 1; i < n; i++) deltas.push(h[i] - h[i - 1]);
+  const avgLast3 = deltas.slice(-3).reduce((a, b) => a + b, 0) / Math.min(3, deltas.length);
+  const avgLast7 = deltas.slice(-7).reduce((a, b) => a + b, 0) / Math.min(7, deltas.length);
+  // "nahe null" = weniger als 0,1% des Marktwerts durchschnittlicher Tageszuwachs
+  const nearZeroThreshold = mv * 0.001;
+
+  if (avgLast3 <= -nearZeroThreshold) {
+    return { label: 'Verkaufen', reason: 'Marktwert fällt im 3-Tage-Schnitt', cls: 'trend-down' };
+  }
+  if (Math.abs(avgLast3) < nearZeroThreshold) {
+    return { label: 'Verkaufen', reason: 'Wachstum ist im 3-Tage-Schnitt praktisch bei null angekommen', cls: 'trend-down' };
+  }
+  if (avgLast3 > 0 && avgLast3 < avgLast7) {
+    return { label: 'Beobachten', reason: 'Wächst noch, aber das Wachstum flacht gerade ab', cls: 'muted' };
+  }
+  if (avgLast3 > 0 && avgLast3 >= avgLast7) {
+    return { label: 'Halten', reason: 'Wächst weiter gleich stark oder stärker (3-Tage- ≥ 7-Tage-Schnitt)', cls: 'trend-up' };
+  }
+  return { label: 'Beobachten', reason: 'Kein klares Muster', cls: 'muted' };
+}
+
+// Spielerstatus aus dem "st"-Feld. ACHTUNG: Diese Zuordnung ist NICHT offiziell bestätigt
+// (nirgends in der Community-Doku dokumentiert), sondern eine gängige Annahme aus Kickbase-Tools.
+// Bitte bei einem Spieler, dessen echten Status du kennst, gegenchecken!
+const PLAYER_STATUS_MAP = {
+  0: { label: 'Fit', cls: 'trend-up' },
+  1: { label: 'Angeschlagen', cls: 'trend-down' },
+  2: { label: 'Verletzt', cls: 'trend-down' },
+  4: { label: 'Rote Karte', cls: 'trend-down' },
+  8: { label: 'Gelb-Rot', cls: 'trend-down' },
+  16: { label: 'Aufbautraining', cls: 'trend-down' }
+};
+function statusBadge(p) {
+  const st = p.st;
+  if (st === undefined || st === null) return '';
+  const info = PLAYER_STATUS_MAP[st];
+  if (!info) return `<span class="badge" title="Unbekannter Status-Code">Status ${st}</span>`;
+  if (st === 0) return ''; // fit = kein Hinweis nötig, sonst wäre jede Zeile mit einem Badge zugepflastert
+  return `<span class="badge ${info.cls}" title="Status-Code ${st}, ungeprüft">${info.label}</span>`;
+}
+
+function playerName(p) {
+  if (!p) return '–';
+  const src = p.player || p.pl || p;
+  // Kickbase v4 nutzt teils ein einzelnes "n"-Feld für den (Nach-)Namen, ähnlich wie bei Liga-Namen
+  if (typeof src.n === 'string' && src.n.trim()) {
+    const first = src.fn || src.firstName || src.first_name;
+    return first ? `${first} ${src.n}`.trim() : src.n;
+  }
+  const first = src.firstName || src.fn || src.first_name || src.pfn;
+  const last = src.lastName || src.ln || src.last_name || src.pln;
+  const combined = ((first || '') + ' ' + (last || '')).trim();
+  if (combined) return combined;
+  return src.name || src.playerName || src.pn || src.fullName || getPid(p) || '–';
+}
+
+function leagueTableSortValue(m, col) {
+  switch (col) {
+    case 'name': return m.name ? m.name.toLowerCase() : null;
+    case 'points': return m.points ?? null;
+    case 'tv': return m._computedTeamValue !== undefined ? m._computedTeamValue : (m.teamValue ?? null);
+    case 'count': return m._playerCount ?? null;
+    default: return null;
+  }
+}
+
+function renderLeagueTable() {
+  const box = document.getElementById('leagueTableBox');
+  if (!LEAGUE_MANAGERS.length) {
+    box.innerHTML = '<span class="muted">Keine Manager-Daten geladen.</span>';
+    return;
+  }
+  const hasPoints = LEAGUE_MANAGERS.some(m => m.points != null);
+  const hasComputedTeamValue = LEAGUE_MANAGERS.some(m => m._computedTeamValue !== undefined);
+  let sorted;
+  if (TABLE_SORT['leagueTable'] && TABLE_SORT['leagueTable'].col) {
+    sorted = sortRowsGeneric('leagueTable', LEAGUE_MANAGERS, leagueTableSortValue);
+  } else {
+    // Standard-Sortierung, solange der Nutzer noch nicht selbst auf eine Spalte geklickt hat
+    sorted = [...LEAGUE_MANAGERS].sort((a, b) => {
+      if (hasPoints) return (b.points ?? -Infinity) - (a.points ?? -Infinity);
+      return a.rank - b.rank;
+    });
+  }
+  const rerender = "renderLeagueTable()";
+  let rows = sorted.map((m, idx) => {
+    const tv = m._computedTeamValue !== undefined ? m._computedTeamValue : m.teamValue;
+    return `<tr>
+    <td>${idx + 1}</td>
+    <td>${m.name}</td>
+    <td>${m.points != null ? m.points : '<span class="muted">–</span>'}</td>
+    <td>${tv === undefined ? '<span class="spinner"></span>' : (tv != null ? fmtMoney(tv) : '<span class="muted">–</span>')}</td>
+    <td>${m._playerCount != null ? m._playerCount : '<span class="muted">–</span>'}</td>
+  </tr>`;
+  }).join('');
+  box.innerHTML = `<table><thead><tr>
+      <th>#</th>
+      ${genericSortHeader('leagueTable', 'Manager', 'name', rerender, true)}
+      ${genericSortHeader('leagueTable', 'Punkte', 'points', rerender)}
+      ${genericSortHeader('leagueTable', 'Teamwert', 'tv', rerender)}
+      ${genericSortHeader('leagueTable', 'Spieler', 'count', rerender)}
+    </tr></thead><tbody>${rows}</tbody></table>
+    ${hasComputedTeamValue ? '<p class="muted" style="font-size:12px; margin-top:8px;">Teamwerte aus Summe der Kader-Marktwerte berechnet (das "tv"-Feld aus der Liga-Antwort selbst ist bislang 0/leer).</p>' :
+      `<div style="margin-top:10px;"><a class="link" onclick="loadRealTeamValues()">Echte Teamwerte laden</a> (ein Zusatz-Request pro Manager, das "tv"-Feld aus der Liga-Antwort ist bislang 0)</div>`}
+    ${hasPoints ? '' : statusHtml('info', 'Kein Punkte-Feld in der Ranking-Antwort gefunden — Reihenfolge entspricht der Server-Antwort, nicht zwingend der echten Platzierung. Rohdaten unten prüfen.') + `<div style="margin-top:8px;"><a class="link" onclick="toggleLeagueTableRaw()">Rohdaten anzeigen (ein Manager)</a></div><div id="leagueTableRawBox" style="display:none; margin-top:10px;"><pre>${JSON.stringify(sorted[0].raw, null, 2)}</pre></div>`}`;
+}
+
+// Lädt für jeden Manager einzeln den Kader und summiert die Marktwerte, da das "tv"-Feld
+// aus der Liga-Antwort selbst noch nicht befüllt ist. Ein Extra-Request pro Manager.
+async function loadRealTeamValues() {
+  for (const m of LEAGUE_MANAGERS) {
+    if (m._computedTeamValue === undefined) m._computedTeamValue = null; // zeigt Spinner ab jetzt
+  }
+  renderLeagueTable();
+  for (const m of LEAGUE_MANAGERS) {
+    const attempts = [
+      `/v4/leagues/${CURRENT_LEAGUE}/users/${m.id}/players`,
+      `/v4/leagues/${CURRENT_LEAGUE}/managers/${m.id}/squad`,
+      `/v4/leagues/${CURRENT_LEAGUE}/teams/${m.id}/players`
+    ];
+    for (const path of attempts) {
+      try {
+        const data = await kbFetch(path);
+        const players = data.players || data.it || data.pl || [];
+        m._computedTeamValue = players.reduce((sum, p) => sum + (p.marketValue ?? p.mv ?? 0), 0);
+        m._playerCount = players.length;
+        break;
+      } catch (e) { /* try next */ }
+    }
+    if (m._computedTeamValue == null) m._computedTeamValue = null; // Endgültig kein Zugriff — bleibt "–"
+    renderLeagueTable();
+    await new Promise(r => setTimeout(r, 120));
+  }
+}
+
+function toggleLeagueTableRaw() {
+  const el = document.getElementById('leagueTableRawBox');
+  if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+async function loadManagers() {
+  const status = document.getElementById('managersStatus');
+  const box = document.getElementById('managersList');
+  document.getElementById('managerSquadBox').innerHTML = '';
+  if (!CURRENT_LEAGUE) {
+    box.innerHTML = '<span class="muted">Wähle zuerst eine Liga oben im Start-Tab.</span>';
+    return;
+  }
+  status.innerHTML = '<span class="spinner"></span> Lade Manager…';
+  box.innerHTML = '';
+  const attempts = [
+    `/v4/leagues/${CURRENT_LEAGUE}/managers`,
+    `/v4/leagues/${CURRENT_LEAGUE}/ranking`,
+    `/v4/leagues/${CURRENT_LEAGUE}/users`,
+    `/v4/leagues/${CURRENT_LEAGUE}/table`
+  ];
+  let lastErr = null;
+  for (const path of attempts) {
+    try {
+      const data = await kbFetch(path);
+      const managers = data.us || data.managers || data.users || data.it || data.tm || [];
+      if (!Array.isArray(managers) || !managers.length) { lastErr = new Error('leere Antwort'); continue; }
+      LEAGUE_MANAGERS = managers.map((m, idx) => ({
+        id: m.id || m.i || m.userId || m.ui,
+        name: m.name || m.n || m.username || m.teamName || m.tn || (m.id || m.i),
+        points: m.points ?? m.tp ?? m.pkt ?? m.sp ?? null,
+        teamValue: m.teamValue ?? m.tv ?? m.mv ?? null,
+        rank: m.rank ?? m.pos ?? m.rnk ?? (idx + 1), // falls kein explizites Rang-Feld: Position in der Antwort als Fallback
+        raw: m
+      })).filter(m => m.id);
+      status.innerHTML = statusHtml('ok', `Geladen über <code>${path}</code>`);
+      box.innerHTML = LEAGUE_MANAGERS.map(m =>
+        `<div style="padding:8px 0; border-bottom:1px solid var(--border);">
+          <a class="link" onclick="loadManagerSquad('${m.id}','${(m.name || '').replace(/'/g, "\\'")}')">${m.name}</a>
+        </div>`
+      ).join('');
+      return;
+    } catch (e) { lastErr = e; }
+  }
+  box.innerHTML = statusHtml('info', 'Keine Manager-Liste gefunden (probiert: ' + attempts.join(', ') + '). Letzter Fehler: ' + (lastErr ? lastErr.message : '–') + '. Über den API-Test-Tab lässt sich der richtige Pfad suchen.');
+}
+
+let LAST_MANAGER_NAME = '';
+
+function managerSquadSortValue(p, col) {
+  switch (col) {
+    case 'name': return playerName(p).toLowerCase();
+    case 'mv': return p.marketValue ?? p.mv ?? null;
+    case 'trend': return trendVal(p);
+    case 'profit': return profitVal(p);
+    case 'points': return p.totalPoints ?? p.tp ?? p.points ?? null;
+    default: return null;
+  }
+}
+
+function renderManagerSquad(players, data, managerName) {
+  const box = document.getElementById('managerSquadBox');
+  const sorted = sortRowsGeneric('managerSquad', players, managerSquadSortValue);
+  const rerender = "renderManagerSquad(LAST_MANAGER_SQUAD_PLAYERS, null, LAST_MANAGER_NAME)";
+  let rows = sorted.map(p => {
+    const profit = profitVal(p);
+    return `<tr><td>${playerCell(p)}</td><td>${fmtMoney(p.marketValue ?? p.mv)}</td><td>${trendBadge(trendVal(p))}</td><td>${profit != null ? trendBadge(profit) : '<span class="muted">–</span>'}</td><td>${p.totalPoints ?? p.tp ?? p.points ?? '–'}</td><td><a class="link" onclick="jumpToValueHistory('${getPid(p)}')">Verlauf</a></td></tr>`;
+  }).join('');
+  box.innerHTML = `<h3>Kader: ${managerName}</h3>
+    <div style="margin-bottom:8px;"><a class="link" onclick="toggleManagerSquadRaw()">Rohdaten anzeigen</a> (falls Namen falsch aussehen, bitte Screenshot schicken)</div>
+    <table><thead><tr>
+      ${genericSortHeader('managerSquad', 'Spieler', 'name', rerender, true)}
+      ${genericSortHeader('managerSquad', 'Marktwert', 'mv', rerender)}
+      ${genericSortHeader('managerSquad', 'Trend (heute)', 'trend', rerender)}
+      ${genericSortHeader('managerSquad', 'Gewinn/Verlust', 'profit', rerender)}
+      ${genericSortHeader('managerSquad', 'Punkte', 'points', rerender)}
+      <th>Verlauf</th>
+    </tr></thead><tbody>${rows}</tbody></table>
+    <div id="managerSquadRawBox" style="display:none; margin-top:14px;"><pre>${JSON.stringify(data ?? LAST_MANAGER_SQUAD_RAW, null, 2)}</pre></div>
+    <div style="margin-top:18px;">
+      <button class="primary" style="width:auto; margin:0; padding:8px 14px;" onclick="loadManagerTeamValueChart()">Marktwert-Verlauf des Teams laden</button>
+      <p class="muted" style="font-size:12px; margin-top:6px;">Ein Zusatz-Request pro Spieler, dauert je nach Kadergröße ein paar Sekunden.</p>
+      <div id="managerTeamValueChart" style="margin-top:10px;"></div>
+    </div>`;
+}
+
+async function loadManagerSquad(managerId, managerName) {
+  const box = document.getElementById('managerSquadBox');
+  box.innerHTML = `<h3>Kader: ${managerName}</h3><span class="spinner"></span> Lade…`;
+  const attempts = [
+    `/v4/leagues/${CURRENT_LEAGUE}/users/${managerId}/players`,
+    `/v4/leagues/${CURRENT_LEAGUE}/managers/${managerId}/squad`,
+    `/v4/leagues/${CURRENT_LEAGUE}/teams/${managerId}/players`
+  ];
+  let lastErr = null;
+  for (const path of attempts) {
+    try {
+      const data = await kbFetch(path);
+      const players = data.players || data.it || data.pl || [];
+      if (!players.length) { box.innerHTML = `<h3>Kader: ${managerName}</h3>` + statusHtml('info', 'Geladen, aber keine Spielerliste in erwarteter Struktur.') + `<pre>${JSON.stringify(data, null, 2)}</pre>`; return; }
+      LAST_MANAGER_SQUAD_PLAYERS = players; // für den Marktwert-Verlauf-Button und die Sortierung gemerkt
+      LAST_MANAGER_SQUAD_RAW = data;
+      LAST_MANAGER_NAME = managerName;
+      TABLE_SORT['managerSquad'] = { col: null, dir: 'desc' }; // neuer Kader = Sortierung zurücksetzen
+      renderManagerSquad(players, data, managerName);
+      return;
+    } catch (e) { lastErr = e; }
+  }
+  box.innerHTML = `<h3>Kader: ${managerName}</h3>` + statusHtml('info', 'Kein Endpunkt hat funktioniert. Letzter Fehler: ' + (lastErr ? lastErr.message : '–'));
+}
+
+function toggleManagerSquadRaw() {
+  const el = document.getElementById('managerSquadRawBox');
+  if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+async function loadManagerTeamValueChart() {
+  const box = document.getElementById('managerTeamValueChart');
+  if (!box) return; // Kader wurde inzwischen neu geladen/weggeklickt
+  box.innerHTML = '<span class="spinner"></span> Lade Marktwert-Verlauf…';
+  await renderTeamValueChartInto(LAST_MANAGER_SQUAD_PLAYERS, box, null);
+}
+
+// ---------- api test ----------
+async function apiTest() {
+  const method = document.getElementById('apiMethod').value;
+  const path = document.getElementById('apiPath').value.trim();
+  const bodyRaw = document.getElementById('apiBody').value.trim();
+  const status = document.getElementById('apiTestStatus');
+  const out = document.getElementById('apiTestResult');
+
+  if (!path) { status.innerHTML = statusHtml('info', 'Pfad eingeben.'); return; }
+  let body = null;
+  if (bodyRaw) {
+    try { body = JSON.parse(bodyRaw); }
+    catch (e) { status.innerHTML = statusHtml('err', 'Body ist kein valides JSON.'); return; }
+  }
+  status.innerHTML = '<span class="spinner"></span> Sende Request…';
+  out.style.display = 'none';
+  try {
+    const data = await kbFetch(path, { method, body });
+    status.innerHTML = statusHtml('ok', 'Erfolgreich.');
+    out.style.display = 'block';
+    out.textContent = JSON.stringify(data, null, 2);
+  } catch (e) {
+    status.innerHTML = statusHtml('err', `Fehler: ${e.message}`);
+    if (e.data) {
+      out.style.display = 'block';
+      out.textContent = JSON.stringify(e.data, null, 2);
+    }
+  }
+}
+
+// Enter-key login
+document.getElementById('password').addEventListener('keydown', e => {
+  if (e.key === 'Enter') login();
+});
+</script>
+</body>
+</html>
