@@ -404,13 +404,18 @@
       </div>
 
       <div class="panel">
-        <h3 style="margin-top:0;">Verkaufsszenarien — Kontostand auf mindestens 0</h3>
+        <h3 style="margin-top:0;">Verkaufsszenarien — Kontostand auf einen Zielwert bringen</h3>
         <p class="muted" style="font-size:13px;">
-          Sechs Wege, deinen Kontostand ins Plus zu bringen: fünf mit unterschiedlicher Priorität, dazu eine exakt
+          Sechs Wege, deinen Kontostand auf den Zielwert unten zu bringen: fünf mit unterschiedlicher Priorität, dazu eine exakt
           durchgerechnete Optimallösung. "Unverkäuflich" markierte Spieler bleiben überall unangetastet, ebenso die
           Mindestbesetzung (11 Kader, und danach muss noch eine spielbare Formation aufstellbar sein — geprüft anhand derselben Logik wie der Aufstellungs-Optimierer, nicht anhand fixer Positions-Mindestzahlen).
         </p>
-        <div id="autoSellScenariosBox" class="muted">Kontostand und Kader laden, dann oben "Alles neu berechnen" klicken.</div>
+        <div class="row" style="gap:10px; align-items:center; margin-bottom:14px;">
+          <label for="sellTargetInput" style="margin:0; font-size:13px; white-space:nowrap;">Zielwert (Kontostand)</label>
+          <input type="number" id="sellTargetInput" value="0" step="100000" style="max-width:200px;">
+          <button class="primary" style="width:auto; margin:0; padding:8px 14px;" onclick="computeAutoSellScenarios()">Szenarien berechnen</button>
+        </div>
+        <div id="autoSellScenariosBox" class="muted">Kontostand und Kader laden, dann Zielwert eingeben und berechnen.</div>
       </div>
     </div>
 
@@ -1489,11 +1494,17 @@ function computeAutoSellScenarios() {
     box.innerHTML = '<span class="muted">Kein Kader geladen.</span>';
     return;
   }
-  if (CURRENT_BUDGET >= 0) {
-    box.innerHTML = `<span class="trend-up">Kontostand ist bereits bei ${fmtMoney(CURRENT_BUDGET)}, kein Verkauf nötig.</span>`;
+  const targetInput = document.getElementById('sellTargetInput');
+  const target = targetInput && targetInput.value !== '' ? Number(targetInput.value) : 0;
+  if (isNaN(target)) {
+    box.innerHTML = '<span class="muted">Zielwert ist keine gültige Zahl.</span>';
     return;
   }
-  const needed = Math.abs(CURRENT_BUDGET);
+  if (CURRENT_BUDGET >= target) {
+    box.innerHTML = `<span class="trend-up">Kontostand ist bereits bei ${fmtMoney(CURRENT_BUDGET)}, das erreicht den Zielwert von ${fmtMoney(target)} bereits — kein Verkauf nötig.</span>`;
+    return;
+  }
+  const needed = target - CURRENT_BUDGET;
   const MIN_SQUAD_SIZE = 11;
   const totalSquadSize = LAST_SQUAD_PLAYERS_FOR_RENDER.length;
   const maxSellable = Math.max(0, totalSquadSize - MIN_SQUAD_SIZE);
@@ -1643,7 +1654,7 @@ function computeAutoSellScenarios() {
   const scenarios = [
     {
       title: 'Wenige Transaktionen',
-      desc: 'Verkauft die wertvollsten Spieler zuerst, um mit möglichst wenigen Verkäufen auf 0 zu kommen.',
+      desc: 'Verkauft die wertvollsten Spieler zuerst, um mit möglichst wenigen Verkäufen den Zielwert zu erreichen.',
       result: buildScenario((a, b) => (b.marketValue ?? b.mv) - (a.marketValue ?? a.mv))
     },
     {
@@ -1737,7 +1748,7 @@ function computeAutoSellScenarios() {
           ? `Mindestkadergröße von ${MIN_SQUAD_SIZE} Spielern erreicht — es fehlen noch ${fmtMoney(needed - sum)}.`
           : hitPositionLimit
             ? `Weitere Verkäufe würden keine spielbare Formation mehr übrig lassen — es fehlen noch ${fmtMoney(needed - sum)}.`
-            : 'Reicht nicht aus, um auf 0 zu kommen.') : chips}
+            : 'Reicht nicht aus, um den Zielwert zu erreichen.') : chips}
       ${lineupHtml}
     </div>`;
   }).join('');
