@@ -178,6 +178,36 @@
   .fc-box { margin-top: 14px; padding: 14px; background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--radius); }
   .fc-box table { margin-top: 10px; }
 
+  /* ---------- Spieltag, Punkte-Charts, Preis-Leistung ---------- */
+  #chartTip { position: fixed; z-index: 200; display: none; pointer-events: none; max-width: 260px; padding: 8px 10px; background: #0f1115; color: var(--text); border: 1px solid var(--border); border-radius: 8px; font-size: 12px; line-height: 1.45; white-space: pre-line; box-shadow: 0 6px 18px rgba(0,0,0,0.45); }
+  .mini-bars { display: inline-flex; align-items: flex-end; gap: 3px; height: 20px; vertical-align: middle; }
+  .mini-bars i { display: block; width: 7px; border-radius: 2px 2px 0 0; cursor: help; }
+  .mini-bars i.mb-pos { background: #3987e5; }
+  .mini-bars i.mb-neg { background: #e66767; }
+  .mini-bars i.mb-none { height: 2px; background: #3a404c; border-radius: 1px; }
+  .pb-chart { position: relative; height: 150px; margin-top: 6px; background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--radius); }
+  .pb-zero { position: absolute; left: 0; right: 0; height: 0; border-top: 1px solid #383835; }
+  .pb-avg { position: absolute; left: 0; right: 0; height: 0; border-top: 1px dashed #9aa1ac; opacity: 0.7; }
+  .pb-avg span { position: absolute; right: 6px; top: -16px; font-size: 10px; color: var(--text-dim); background: var(--panel-2); padding: 0 3px; }
+  .pb-bar { position: absolute; transform: translateX(-50%); background: #3987e5; border-radius: 4px 4px 0 0; cursor: help; }
+  .pb-bar.neg { background: #e66767; border-radius: 0 0 4px 4px; }
+  .pb-bar:hover, .pb-bar:focus-visible { filter: brightness(1.2); outline: none; }
+  .pb-none { position: absolute; width: 6px; height: 6px; border-radius: 50%; background: #4a505c; transform: translate(-50%, -50%); cursor: help; }
+  .pb-none::after { content: ''; position: absolute; inset: -9px; }
+  .pb-x { position: relative; height: 16px; margin-top: 4px; font-size: 11px; color: var(--text-dim); }
+  .pb-x span { position: absolute; transform: translateX(-50%); }
+  .sc-plot { position: relative; height: 260px; margin-left: 58px; background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--radius); }
+  .sc-plot svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .sc-dot { position: absolute; width: 9px; height: 9px; border-radius: 50%; transform: translate(-50%, -50%); box-shadow: 0 0 0 2px var(--panel-2); cursor: help; }
+  .sc-dot::after { content: ''; position: absolute; inset: -8px; border-radius: 50%; }
+  .sc-dot.squad, .sc-key.squad { background: #3987e5; }
+  .sc-dot.market, .sc-key.market { background: #d95926; }
+  .sc-dot:hover, .sc-dot:focus-visible { box-shadow: 0 0 0 2px var(--panel-2), 0 0 0 4px var(--text-dim); outline: none; }
+  .sc-key { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
+  .sc-label { position: absolute; transform: translate(9px, -50%); font-size: 11px; color: var(--text); white-space: nowrap; pointer-events: none; text-shadow: 0 0 3px var(--panel-2), 0 0 3px var(--panel-2); }
+  .sc-q { position: absolute; font-size: 10px; color: var(--text-dim); opacity: 0.75; pointer-events: none; }
+  .vc-tag-bottom { top: auto; bottom: 3px; color: #ffb238; }
+
   /* ---------- Mobile-Optimierung ---------- */
   @media (max-width: 640px) {
     header { padding: 12px 14px; }
@@ -231,6 +261,7 @@
     .vc-plot { height: 180px; margin-left: 48px; }
     .vc-xaxis { margin-left: 48px; }
     .vc-ylab { font-size: 10px; }
+    .sc-plot { height: 220px; margin-left: 48px; }
   }
 </style>
 </head>
@@ -259,6 +290,7 @@
 <div id="app">
   <nav id="tabs">
     <button class="active" data-tab="home" onclick="switchTab('home')">Start</button>
+    <button data-tab="matchday" onclick="switchTab('matchday')">Spieltag</button>
     <button data-tab="squad" onclick="switchTab('squad')">Kader</button>
     <button data-tab="sell" onclick="switchTab('sell')">Verkauf</button>
     <button data-tab="market" onclick="switchTab('market')">Markt</button>
@@ -278,6 +310,10 @@
           </div>
         </div>
         <div id="leagueList" class="muted">Lade Ligen…</div>
+      </div>
+
+      <div class="panel" id="mdBannerPanel" style="display:none;">
+        <div id="mdBanner"></div>
       </div>
 
       <div class="panel">
@@ -334,6 +370,50 @@
       </div>
     </div>
 
+    <div class="tab-content" id="tab-matchday" style="display:none;">
+      <div class="panel">
+        <div class="row" style="justify-content: space-between;">
+          <h3 style="margin:0;">Nächster Spieltag</h3>
+          <button class="primary" style="width:auto; margin:0; padding:8px 14px;" onclick="loadMatchdayData(true)">Neu berechnen</button>
+        </div>
+        <div id="mdStatus" style="margin-top:10px;"></div>
+        <div id="mdCockpit" class="muted">Wähle zuerst eine Liga oben im Start-Tab.</div>
+      </div>
+
+      <div class="panel">
+        <h3>Deine Spieler am Spieltag</h3>
+        <p class="muted" style="font-size:13px;">xP = erwartete Punkte: Einsatzwahrscheinlichkeit × Punkte je Einsatz (jüngste Spiele zählen mehr) × Gegner- und Heimfaktor. Antippen oder Mauszeiger auf die Form-Balken zeigt Gegner und Punkte.</p>
+        <div id="mdSquad" class="muted">–</div>
+      </div>
+
+      <div class="row" style="align-items: stretch; gap: 20px;">
+        <div class="panel" style="flex: 1; min-width: 300px;">
+          <h3>Beste Aufstellung nach xP</h3>
+          <div id="mdLineup" class="muted">–</div>
+        </div>
+        <div class="panel" style="flex: 1; min-width: 300px;">
+          <h3>Spieltags-Booster vom Markt</h3>
+          <p class="muted" style="font-size:13px;">Marktspieler mit den meisten erwarteten Punkten. "Rechtzeitig" heißt: Das Angebot endet vor dem Anpfiff.</p>
+          <div id="mdMarket" class="muted">–</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3>Modell-Check</h3>
+        <div id="mdCheck" class="muted">–</div>
+      </div>
+
+      <div class="panel">
+        <h3>Spielplan</h3>
+        <div id="mdFixtures" class="muted">–</div>
+      </div>
+
+      <div class="panel">
+        <h3>Datenquellen</h3>
+        <div id="mdSources" class="muted" style="font-size:12px;">–</div>
+      </div>
+    </div>
+
     <div class="tab-content" id="tab-market" style="display:none;">
       <div class="panel">
         <div class="row" style="justify-content: space-between;">
@@ -342,6 +422,12 @@
         </div>
         <div id="marketStatus"></div>
         <div id="marketTable" class="muted">Wähle zuerst eine Liga oben im Start-Tab.</div>
+      </div>
+
+      <div class="panel">
+        <h3>Preis-Leistung</h3>
+        <p class="muted" style="font-size:13px;">Marktwert gegen Punkteschnitt: Links oben sitzen die Schnäppchen, viele Punkte für wenig Geld. Antippen oder Mauszeiger auf einen Punkt zeigt Details.</p>
+        <div id="valueScatter" class="muted">Erscheint, sobald Markt und Kader geladen sind.</div>
       </div>
     </div>
 
@@ -358,8 +444,8 @@
       <div class="panel">
         <h3>Formvergleich</h3>
         <p class="muted" style="font-size:13px;">
-          Vergleich nach Punkteschnitt und Gesamtpunkten, gruppiert nach Position. Basis ist der Saison-Punkteschnitt,
-          keine spieltag-genaue Aufschlüsselung (dafür haben wir bislang keine bestätigte Datenquelle gefunden).
+          Vergleich nach Punkteschnitt und Gesamtpunkten, gruppiert nach Position. Punkte je Spieltag siehst du im
+          Spieltag-Tab und im Verlauf-Popup jedes Spielers.
         </p>
         <div id="formComparisonBox" class="muted">Lade zuerst den Kader oben.</div>
       </div>
@@ -450,6 +536,15 @@
         <div id="managersStatus"></div>
         <div id="managersList" class="muted">Wähle zuerst eine Liga oben im Start-Tab.</div>
         <div id="managerSquadBox" style="margin-top:18px;"></div>
+      </div>
+
+      <div class="panel">
+        <div class="row" style="justify-content: space-between;">
+          <h3 style="margin:0;">Liga-Form</h3>
+          <button class="primary" style="width:auto; margin:0; padding:8px 14px;" onclick="loadLigaForm()">Laden</button>
+        </div>
+        <p class="muted" style="font-size:13px;">Punkte je Spieltag aller Manager: Wer ist gerade in Form, wer holt die Spieltagssiege? Ein Request pro Manager.</p>
+        <div id="ligaFormBox" class="muted">Auf "Laden" klicken.</div>
       </div>
     </div>
 
@@ -667,6 +762,7 @@ async function login() {
     });
 
     TOKEN = data.tkn || data.token || data.tok || null;
+    OWN_USER_ID = (data.u && (data.u.id || data.u.i)) || null; // nur zum Hervorheben in der Liga-Form
     SESSION_EXPIRED = false;
     if (!TOKEN) throw new Error('Kein Token in der Antwort gefunden.');
 
@@ -705,6 +801,7 @@ function switchTab(tab) {
   document.querySelectorAll('nav#tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   document.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
   document.getElementById('tab-' + tab).style.display = 'block';
+  if (tab === 'matchday') ensureMatchdayData(); // Spieltags-Prognose lädt erst, wenn der Tab gebraucht wird
 }
 
 // Zentraler, robuster Kader-Abruf (probiert dieselben Pfad-Varianten wie der Kader-Tab, cached in LAST_SQUAD_RAW)
@@ -736,6 +833,7 @@ async function loadBudget() {
   box.innerHTML = '<span class="spinner"></span> Lade Kontostand…';
   try {
     const data = await kbFetch(`/v4/leagues/${CURRENT_LEAGUE}/me`);
+    if (data && data.cpi) CURRENT_CPI = String(data.cpi); // Wettbewerb der Liga (Spielplan, Tabelle)
     const budget = data.b;
     if (budget === undefined) {
       CURRENT_BUDGET = null;
@@ -757,6 +855,7 @@ async function loadBudget() {
 
 // Spiegelt den Kontostand kompakt in den Kopf des Verkauf-Tabs
 function updateSellDashboardBudget() {
+  renderMatchdayBanner(); // Banner "Nächster Spieltag" zeigt die Kontostand-Warnung
   const el = document.getElementById('sellDashboardBudget');
   if (!el) return;
   if (CURRENT_BUDGET === null) { el.innerHTML = '<span class="muted">–</span>'; return; }
@@ -790,6 +889,7 @@ async function loadHome() {
   await loadWinnersLosers(squadPlayers);
   await loadTopMarketGainers();
   await loadHoldSellRecommendations(); // ein Zusatz-Request pro Kader-Spieler, macht den Start-Ladevorgang spürbar länger
+  if (isTabVisible('matchday')) ensureMatchdayData(); // Spieltag-Tab war schon offen: jetzt mit vollem Kader rechnen
 }
 
 async function loadTeamValueChart(squadPlayers) {
@@ -1100,6 +1200,7 @@ async function loadLeagues() {
 async function reloadCurrentLeague() {
   if (!CURRENT_LEAGUE) return;
   HISTORY_CACHE.clear(); // expliziter Reload = frische Marktwert-Verläufe statt Cache
+  API_CACHE.clear();     // ebenso Spielplan, Punkte je Spieltag und Aufstellung
   await selectLeague(CURRENT_LEAGUE, CURRENT_LEAGUE_NAME);
 }
 
@@ -1123,6 +1224,8 @@ async function selectLeague(id, name) {
   for (const key in CHART_DATA) delete CHART_DATA[key]; // Chart-Daten der alten Liga verwerfen
   loadUntouchables(); // "Unverkäuflich"-Markierungen gelten je Liga
   renderHoldSell();   // alte Tabelle sofort weg, damit kein Haken der alten Liga unter der neuen gespeichert wird
+  MD = emptyMdState(); LIGA_FORM = null; LIGA_FORM_LOADING = null; MD_SQUAD_ROWS = []; CURRENT_CPI = null; // Spieltag-Daten der alten Liga verwerfen
+  resetMatchdayUi();
 
   document.getElementById('currentLeagueBadge').style.display = 'inline';
   document.getElementById('reloadLeagueBtn').style.display = 'inline-block';
@@ -1135,6 +1238,10 @@ async function selectLeague(id, name) {
   // Markt, Kader, Manager sequenziell laden (nicht parallel!) — vermeidet mehrfache
   // gleichzeitige Kader-/Markt-Requests und die dadurch verursachten Race Conditions.
   // Start-Tab greift danach auf die bereits geladenen Daten zurück statt sie erneut zu holen.
+  // Spielplan zuerst (ein Request): Banner "Nächster Spieltag" und Spieltag-Marker im Marktwert-Chart
+  const mdForLeague = MD;
+  await loadFixtures(mdForLeague);
+  if (mdForLeague === MD) renderMatchdayBanner();
   await loadMarket();
   await loadSquad();
   await loadManagers();
@@ -1155,6 +1262,8 @@ async function loadMarket() {
     const data = await kbFetch(`/v4/leagues/${CURRENT_LEAGUE}/market`);
     const players = data.players || data.it || data.m || [];
     LAST_MARKET_PLAYERS = players;
+    // Ablaufzeit der Angebote: "exs" = Restsekunden (laut Community-Doku), nur plausible Werte nutzen
+    players.forEach(p => { const s = num(p.exs); p._expiresAt = s != null && s > 0 && s < 30 * 86400 ? Date.now() + s * 1000 : null; });
     status.innerHTML = '';
     if (!players.length) {
       box.innerHTML = statusHtml('info', 'Markt geladen, aber keine Spieler in erwarteter Struktur gefunden. Roh-Antwort:') +
@@ -1164,6 +1273,7 @@ async function loadMarket() {
     renderMarketTable(players);
     await computeMarketTrends(players, status, () => renderMarketTable(players));
     populateScenarioSelects();
+    renderValueScatter();
   } catch (e) {
     console.error(e);
     status.innerHTML = statusHtml('err', 'Fehler beim Laden des Markts: ' + e.message);
@@ -1220,8 +1330,10 @@ async function openValueModal(playerId) {
       </div>
       <div id="valueModalChart"></div>
       ${forecastSummaryHtml(fc, dates[dates.length - 1], true)}
+      <div id="valueModalPoints"></div>
     `;
     renderValueChart('valueModalChart');
+    loadPopupPoints(playerId, req); // Punkte je Spieltag + nächstes Spiel, lädt im Hintergrund nach
   } catch (e) {
     if (req !== VALUE_MODAL_REQ) return;
     console.error(e);
@@ -1371,7 +1483,7 @@ function renderMarketTable(players) {
     const pending = p._trendToday === undefined;
     const reco = pending ? null : recommendedOffer(p);
     return `<tr>
-      <td>${playerCell(p)}</td>
+      <td>${playerCell(p)}${marketExpiryHtml(p)}</td>
       <td>${fmtMoney(mv)}</td>
       <td>${pending ? '<span class="spinner"></span>' : trendBadge(p._trendToday)}</td>
       <td>${pending ? '<span class="spinner"></span>' : trendBadge(p._trend7)}</td>
@@ -1893,6 +2005,7 @@ async function loadSquad() {
       renderFormComparison(players);
       renderHoldSell();
       populateScenarioSelects();
+      renderValueScatter();
       return;
     } catch (e) {
       lastErr = e;
@@ -1993,15 +2106,20 @@ function splitStartersByPosition(starters, formation) {
   return [['TW', tw], ['ABW', abw], ['MF', mf], ['ST', st]];
 }
 
+// Beste Formation nach beliebiger Bewertung score(p). computeBestLineup bewertet wie bisher nach
+// Punkteschnitt, die Spieltags-Prognose nach erwarteten Punkten (xP).
 function computeBestLineup(players) {
   // Spieler ohne Punkteschnitt (z.B. noch kein Spiel diese Saison) fliegen NICHT mehr komplett raus,
   // sonst kann früh in der Saison plötzlich keine Formation mehr aufstellbar sein, obwohl positionell
   // genug Spieler da wären. Sie zählen mit 0 Punkten, können aber trotzdem einen Platz füllen.
+  return computeBestLineupBy(players, p => avgPoints(p) ?? 0);
+}
+function computeBestLineupBy(players, score) {
   const withPos = players.filter(p => getPos(p) != null);
   if (!withPos.length) return null;
   const byPos = { 1: [], 2: [], 3: [], 4: [] };
   withPos.forEach(p => { if (byPos[getPos(p)]) byPos[getPos(p)].push(p); });
-  Object.values(byPos).forEach(arr => arr.sort((a, b) => (avgPoints(b) ?? 0) - (avgPoints(a) ?? 0)));
+  Object.values(byPos).forEach(arr => arr.sort((a, b) => (score(b) ?? 0) - (score(a) ?? 0)));
   if (!byPos[1].length) return null;
 
   let best = null;
@@ -2013,7 +2131,7 @@ function computeBestLineup(players) {
       ...byPos[3].slice(0, f.mid),
       ...byPos[4].slice(0, f.fwd)
     ];
-    const total = starters.reduce((sum, p) => sum + (avgPoints(p) ?? 0), 0);
+    const total = starters.reduce((sum, p) => sum + (score(p) ?? 0), 0);
     if (!best || total > best.total) best = { formation: f, starters, total };
   }
   return best;
@@ -2349,12 +2467,12 @@ function forecastSummaryHtml(fc, lastDate, withTable) {
     </div>
     <div class="row" style="gap:24px;">
       <div><div class="muted" style="font-size:12px;">Erwarteter Wert</div><div style="font-size:18px;">${fmtMoney(end.mv)}</div></div>
-      <div><div class="muted" style="font-size:12px;">Veränderung</div><div style="font-size:18px;">${trendBadge(fc.change)} <span class="muted" style="font-size:12px;">${fmtPct(fc.rel)}</span></div></div>
+      <div><div class="muted" style="font-size:12px;">Veränderung</div><div style="font-size:18px;">${Math.round(fc.change) === 0 ? '<span class="muted">0 €</span>' : trendBadge(fc.change)} <span class="muted" style="font-size:12px;">${fmtPct(fc.rel)}</span></div></div>
       <div><div class="muted" style="font-size:12px;">Zielkorridor 80 %</div><div style="font-size:14px; margin-top:3px;">${fmtMoney(fc.lo)} bis ${fmtMoney(fc.hi)}</div></div>
       <div><div class="muted" style="font-size:12px;">Trefferquote Richtung</div><div style="font-size:18px;">${fc.hitRate != null ? Math.round(fc.hitRate * 100) + ' %' : '<span class="muted">k. A.</span>'}</div></div>
     </div>
     ${table}
-    <p class="muted" style="font-size:11px; margin:10px 0 0; line-height:1.5;">${method} ${fcHitText(fc)}${fc.calibrated ? '' : ' Kurze Historie: Korridor grob aus der bisherigen Schwankung geschätzt.'} Spieltage, Verletzungen und Aufstellungsnews kennt das Modell nicht.</p>
+    <p class="muted" style="font-size:11px; margin:10px 0 0; line-height:1.5;">${method} ${fcHitText(fc)}${fc.calibrated ? '' : ' Kurze Historie: Korridor grob aus der bisherigen Schwankung geschätzt.'}${matchdayNote(lastDate)}</p>
   </div>`;
 }
 
@@ -2411,6 +2529,16 @@ function renderValueChart(id) {
     const lastDate = dates[showN - 1];
     const isToday = lastDate.toDateString() === new Date().toDateString();
     tags = `<span class="vc-tag" style="left:${lastX}%;">${isToday ? 'heute' : 'Stand ' + fmtDay(lastDate)}</span>`;
+    // nächster Spieltag im Prognosebereich: senkrechte Markierung zum Anpfiff
+    const nextMd = MD.info && MD.info.next;
+    if (nextMd && nextMd.first != null) {
+      const off = (nextMd.first - lastDate.getTime()) / 86400000;
+      if (off > 0 && off <= fcPts.length) {
+        const xk = xAt(showN - 1 + off).toFixed(2);
+        svg += `<line x1="${xk}" x2="${xk}" y1="0" y2="100" stroke="#ffb238" stroke-width="1" opacity="0.7" vector-effect="non-scaling-stroke" />`;
+        tags += `<span class="vc-tag vc-tag-bottom" style="left:${xk}%;">Spieltag ${nextMd.day}</span>`;
+      }
+    }
   }
   svg += `<polyline points="${vals.map((v, i) => xy(i, v)).join(' ')}" fill="none" stroke="${histColor}" stroke-width="2" stroke-linejoin="round" vector-effect="non-scaling-stroke" />`;
   const yLabels = grid.map(v => `<span class="vc-ylab" style="top:${yAt(v).toFixed(2)}%;">${compactMoney(v)}</span>`).join('');
@@ -2509,16 +2637,18 @@ function holdSellRecommendation(p) {
   return { label: 'Beobachten', reason: 'Kein klares Muster', cls: 'muted' };
 }
 
-// Spielerstatus aus dem "st"-Feld. ACHTUNG: Diese Zuordnung ist NICHT offiziell bestätigt
-// (nirgends in der Community-Doku dokumentiert), sondern eine gängige Annahme aus Kickbase-Tools.
+// Spielerstatus aus dem "st"-Feld. Von Kickbase nicht offiziell dokumentiert. Zuordnung laut Community-Quellen:
+// PlayerStatus-Enum der kickbase-api-python (1 INJURED, 2 STRICKEN, 4 REHAB, 8 RED_CARD, 16 YELLOW_RED_CARD)
+// und v4-Tools (1 verletzt, 2 angeschlagen, 4 Aufbautraining). Bis v2 waren 1 und 2 hier vertauscht.
+// Code 16 ist in den Quellen uneinheitlich (Gelb-Rot bzw. nicht im Kader), heißt aber in beiden Fällen: fällt aus.
 // Bitte bei einem Spieler, dessen echten Status du kennst, gegenchecken!
 const PLAYER_STATUS_MAP = {
   0: { label: 'Fit', cls: 'trend-up' },
-  1: { label: 'Angeschlagen', cls: 'trend-down' },
-  2: { label: 'Verletzt', cls: 'trend-down' },
-  4: { label: 'Rote Karte', cls: 'trend-down' },
-  8: { label: 'Gelb-Rot', cls: 'trend-down' },
-  16: { label: 'Aufbautraining', cls: 'trend-down' }
+  1: { label: 'Verletzt', cls: 'trend-down' },
+  2: { label: 'Angeschlagen', cls: 'trend-down' },
+  4: { label: 'Aufbautraining', cls: 'trend-down' },
+  8: { label: 'Gesperrt', cls: 'trend-down' },
+  16: { label: 'Fällt aus', cls: 'trend-down' }
 };
 function statusBadge(p) {
   const st = p.st;
@@ -2755,6 +2885,994 @@ async function loadManagerTeamValueChart() {
   box.innerHTML = '<span class="spinner"></span> Lade Marktwert-Verlauf…';
   await renderTeamValueChartInto(LAST_MANAGER_SQUAD_PLAYERS, box, null);
 }
+
+
+// =====================================================================================
+// ---------- Spieltag: Spielplan, Punkte-Prognose (xP), Aufstellung, Liga-Form ----------
+// =====================================================================================
+// Datenquellen (inoffizielle Kickbase-API v4, Feldnamen laut Community-Doku, daher defensiv gelesen):
+//   /v4/competitions/{cid}/matchdays                    Spielplan (t1 = Heim, t2 = Gast, dt = Anstoß, t1g/t2g = Tore)
+//   /v4/competitions/{cid}/table                        Bundesliga-Tabelle (tid, tn = Teamname)
+//   /v4/competitions/{cid}/players/{pid}/performance    Punkte je Spiel (it = Saisons, ph = Spiele: day, p, mp, md, t1, t2, pt)
+//   /v4/leagues/{lid}/lineup                            deine aktuell gesetzte Aufstellung
+//   /v4/leagues/{lid}/managers/{uid}/performance        Punkte je Spieltag eines Managers
+// Geladen wird nur bei Bedarf (Spieltag-Tab, Popup, Liga-Form), Antworten werden 30 Minuten gemerkt.
+
+const API_CACHE = new Map(); // Pfad -> { data, ts }
+const API_TTL_MS = 30 * 60 * 1000;
+async function cachedGet(path, ttlMs = API_TTL_MS) {
+  const hit = API_CACHE.get(path);
+  if (hit && Date.now() - hit.ts < ttlMs) return { data: hit.data, cached: true };
+  const data = await kbFetch(path);
+  API_CACHE.set(path, { data, ts: Date.now() });
+  return { data, cached: false };
+}
+
+let CURRENT_CPI = null; // Wettbewerb der Liga laut /me (1 = Bundesliga)
+let OWN_USER_ID = null; // eigene User-ID aus dem Login, nur zum Hervorheben in der Liga-Form
+function competitionId() {
+  const lg = LEAGUES.find(l => String(l.id || l.i) === String(CURRENT_LEAGUE));
+  return String((lg && lg.cpi) || CURRENT_CPI || '1');
+}
+// Falls die Ligenliste keinen Wettbewerb (cpi) liefert: einmal /me fragen, bevor der Spielplan geladen wird
+async function ensureCompetitionId() {
+  const lg = LEAGUES.find(l => String(l.id || l.i) === String(CURRENT_LEAGUE));
+  if ((lg && lg.cpi) || CURRENT_CPI) return;
+  try {
+    const { data } = await cachedGet(`/v4/leagues/${CURRENT_LEAGUE}/me`, 60 * 1000);
+    if (data && data.cpi) CURRENT_CPI = String(data.cpi);
+  } catch (e) { /* Rückfall: Bundesliga */ }
+}
+function teamId(p) { const t = p && (p.tid ?? p.teamId ?? p.ti); return t == null ? '' : String(t); }
+function num(v) { const n = typeof v === 'string' ? parseFloat(v) : v; return Number.isFinite(n) ? n : null; }
+function parseKbDate(v) {
+  if (v == null || v === '') return null;
+  if (typeof v === 'number') return new Date(v > 1e12 ? v : v * 1000);
+  const d = new Date(v);
+  return isNaN(d.getTime()) ? null : d;
+}
+function parseMinutes(v) { const n = parseInt(String(v ?? ''), 10); return Number.isFinite(n) ? n : null; }
+const MATCH_DURATION_MS = 2.5 * 3600000; // Anstoß + 2,5 Std = Spiel sicher beendet
+function fmtKickoff(t) {
+  return new Date(t).toLocaleString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+function fmtCountdown(ms) {
+  if (ms <= 0) return 'läuft';
+  const m = Math.floor(ms / 60000), d = Math.floor(m / 1440), h = Math.floor((m % 1440) / 60), mi = m % 60;
+  if (d > 0) return `noch ${d} T ${h} Std`;
+  if (h > 0) return `noch ${h} Std ${mi} Min`;
+  return `noch ${mi} Min`;
+}
+// Countdown-Anzeigen (data-countdown = Zielzeit in ms) halbminütlich aktualisieren
+function updateCountdowns() {
+  document.querySelectorAll('[data-countdown]').forEach(el => { el.textContent = fmtCountdown(Number(el.dataset.countdown) - Date.now()); });
+}
+setInterval(updateCountdowns, 30000);
+
+// ---------- gemeinsamer Tooltip für alle Elemente mit data-tip (Text per textContent, also HTML-sicher) ----------
+let CHART_TIP_EL = null;
+function showChartTip(target, x, y) {
+  if (!CHART_TIP_EL) {
+    CHART_TIP_EL = document.createElement('div');
+    CHART_TIP_EL.id = 'chartTip';
+    CHART_TIP_EL.setAttribute('role', 'tooltip');
+    document.body.appendChild(CHART_TIP_EL);
+  }
+  CHART_TIP_EL.textContent = target.dataset.tip;
+  CHART_TIP_EL.style.display = 'block';
+  const r = CHART_TIP_EL.getBoundingClientRect();
+  let left = x + 14, top = y + 14;
+  if (left + r.width > window.innerWidth - 8) left = x - r.width - 14;
+  if (top + r.height > window.innerHeight - 8) top = y - r.height - 14;
+  CHART_TIP_EL.style.left = Math.max(8, left) + 'px';
+  CHART_TIP_EL.style.top = Math.max(8, top) + 'px';
+}
+function hideChartTip() { if (CHART_TIP_EL) CHART_TIP_EL.style.display = 'none'; }
+['pointermove', 'pointerdown'].forEach(type => document.addEventListener(type, e => {
+  const t = e.target && e.target.closest ? e.target.closest('[data-tip]') : null;
+  if (t) showChartTip(t, e.clientX, e.clientY); else hideChartTip();
+}));
+document.addEventListener('focusin', e => {
+  const t = e.target && e.target.closest ? e.target.closest('[data-tip]') : null;
+  if (t) { const r = t.getBoundingClientRect(); showChartTip(t, r.left + r.width / 2, r.bottom); }
+});
+document.addEventListener('focusout', hideChartTip);
+
+// ---------- Zustand des Spieltag-Moduls (wird bei Ligawechsel komplett ersetzt) ----------
+function emptyMdState() {
+  return { fixtures: null, info: null, teamNames: {}, teamSy: {}, lineup: null, perf: {}, loading: false, loadedAt: null, sources: {}, raw: {} };
+}
+let MD = emptyMdState();
+let LIGA_FORM = null; // { rows, days } der Liga-Form, null = noch nicht geladen
+let LIGA_FORM_LOADING = null; // Liga, für die gerade geladen wird (Schutz gegen Doppelklick)
+
+// ---------- Spielplan ----------
+function parseFixtures(data) {
+  const days = (data && (data.it || data.md || data.matchdays)) || [];
+  return days.map(d => ({
+    day: num(d.day ?? d.d),
+    matches: (d.it || d.m || []).map(m => {
+      const date = parseKbDate(m.dt ?? m.md ?? m.date);
+      const g1 = num(m.t1g), g2 = num(m.t2g);
+      const t = date ? date.getTime() : null;
+      const finished = t != null && Date.now() - t > MATCH_DURATION_MS; // beendet = Anstoß + 2,5 Std vorbei (Tore braucht nur die Gegnerstärke)
+      return { t1: String(m.t1 ?? ''), t2: String(m.t2 ?? ''), sy1: m.t1sy || '', sy2: m.t2sy || '', g1, g2, date, finished };
+    }).filter(m => m.t1 && m.t2)
+  })).filter(d => d.day != null && d.matches.length);
+}
+
+// Nächster Spieltag = kleinste Nummer, bei dem noch mindestens die Hälfte der Spiele aussteht (ein einzelnes
+// verlegtes Nachholspiel macht einen alten Spieltag so nicht wieder "aktuell"). Läuft er schon, ist die
+// Aufstellung gesperrt. Beendet = alle Spiele vorbei.
+function matchdayInfo(fixtures) {
+  const now = Date.now();
+  const days = fixtures.map(d => {
+    const times = d.matches.map(m => m.date ? m.date.getTime() : null).filter(t => t != null);
+    return {
+      day: d.day, matches: d.matches,
+      first: times.length ? Math.min(...times) : null,
+      upcomingShare: times.length ? times.filter(t => t > now).length / times.length : 0,
+      // beendet: mindestens die Hälfte gespielt und kein Spiel mehr in den nächsten 3 Tagen offen
+      // (ein weit verlegtes Nachholspiel blockiert so nicht, ein laufender Spieltag zählt noch nicht)
+      done: d.matches.filter(m => m.finished).length >= d.matches.length / 2 &&
+        !d.matches.some(m => !m.finished && m.date && m.date.getTime() < now + 3 * 86400000)
+    };
+  });
+  const next = days.filter(d => d.upcomingShare >= 0.5).sort((a, b) => a.day - b.day)[0] || null;
+  const finishedDays = days.filter(d => d.done).map(d => d.day).sort((a, b) => a - b);
+  const allTimes = days.map(d => d.first).filter(t => t != null);
+  const seasonStart = allTimes.length ? Math.min(...allTimes) - 7 * 86400000 : 0;
+  return { next, days, finishedDays, seasonStart };
+}
+
+// Beendet/nächster Spieltag hängen von der Uhrzeit ab: bei jeder Anzeige neu ableiten, damit ein lange
+// offener Tab nicht auf einem vergangenen Spieltag stehen bleibt
+function refreshMatchdayInfo(md) {
+  if (!md.fixtures) return;
+  const now = Date.now();
+  md.fixtures.forEach(d => d.matches.forEach(m => { m.finished = !!m.date && now - m.date.getTime() > MATCH_DURATION_MS; }));
+  Object.values(md.perf).forEach(e => e.games.forEach(g => { if (g.date) g.finished = now - g.date.getTime() > MATCH_DURATION_MS; }));
+  md.info = matchdayInfo(md.fixtures);
+}
+
+async function loadFixtures(md) {
+  try {
+    await ensureCompetitionId();
+    md.cpi = competitionId();
+    const { data } = await cachedGet(`/v4/competitions/${md.cpi}/matchdays`);
+    md.raw.fixtures = data;
+    const fixtures = parseFixtures(data);
+    md.sources.fixtures = fixtures.length ? `${fixtures.length} Spieltage` : 'Antwort ohne erkennbare Spieltage';
+    if (!fixtures.length) return false;
+    md.fixtures = fixtures;
+    md.info = matchdayInfo(fixtures);
+    fixtures.forEach(d => d.matches.forEach(m => { if (m.sy1) md.teamSy[m.t1] = m.sy1; if (m.sy2) md.teamSy[m.t2] = m.sy2; }));
+    return true;
+  } catch (e) {
+    md.sources.fixtures = 'Fehler ' + e.message;
+    return false;
+  }
+}
+
+async function loadBlTable(md) {
+  try {
+    const { data } = await cachedGet(`/v4/competitions/${competitionId()}/table`);
+    const rows = (data && (data.it || data.t)) || [];
+    rows.forEach(r => { const tid = String(r.tid ?? r.i ?? ''); if (tid && (r.tn || r.n)) md.teamNames[tid] = r.tn || r.n; });
+    md.sources.table = `${rows.length} Teams`;
+  } catch (e) { md.sources.table = 'Fehler ' + e.message; }
+}
+function teamShort(tid) { return MD.teamSy[tid] || MD.teamNames[tid] || (tid ? 'Team ' + tid : '?'); }
+function teamFull(tid) { return MD.teamNames[tid] || MD.teamSy[tid] || (tid ? 'Team ' + tid : '?'); }
+
+// Angriffs- und Abwehrstärke je Team aus den Ergebnissen der laufenden Saison (Spiele vor "asOf").
+// Mit 5 virtuellen Durchschnittsspielen geglättet, weil früh in der Saison wenige Spiele vorliegen.
+function teamStrengths(fixtures, asOf) {
+  const until = asOf == null ? Date.now() : asOf; // nach Datum, damit spätere Nachholspiele nicht einfließen
+  const st = {};
+  let goals = 0, games = 0;
+  for (const d of fixtures || []) {
+    for (const m of d.matches) {
+      if (!m.finished || m.g1 == null || m.g2 == null || !m.date || m.date.getTime() >= until) continue;
+      for (const [t, gf, ga] of [[m.t1, m.g1, m.g2], [m.t2, m.g2, m.g1]]) {
+        const s = st[t] || (st[t] = { gf: 0, ga: 0, n: 0 });
+        s.gf += gf; s.ga += ga; s.n++;
+      }
+      goals += m.g1 + m.g2; games += 2;
+    }
+  }
+  const avg = goals > 0 ? goals / games : 1.5; // ohne ein einziges Tor (z.B. 0:0 zum Auftakt) neutral rechnen
+  const K = 5;
+  const teams = {};
+  for (const [t, s] of Object.entries(st)) {
+    teams[t] = { att: (s.gf + K * avg) / ((s.n + K) * avg), def: (s.ga + K * avg) / ((s.n + K) * avg) };
+  }
+  return { teams };
+}
+
+// Gegner- und Heimfaktor: Abwehr/Torwart profitieren von harmlosen Gegnern, Stürmer von löchrigen Abwehren,
+// Mittelfeld von beidem zur Hälfte. Heim +5 %, auswärts -5 %. Begrenzt auf 0,75 bis 1,3 (Heuristik).
+function oppFactor(pos, home, opp) {
+  let f = 1;
+  if (opp) {
+    const defensive = Math.sqrt(1 / opp.att);
+    const offensive = Math.sqrt(opp.def);
+    f = pos === 1 || pos === 2 ? defensive : pos === 4 ? offensive : (defensive + offensive) / 2;
+  }
+  if (!Number.isFinite(f)) f = 1;
+  f *= home ? 1.05 : 0.95;
+  return Math.min(1.3, Math.max(0.75, f));
+}
+function difficulty(factor) {
+  if (factor >= 1.07) return { text: 'leicht', cls: 'trend-up', icon: '▲' };
+  if (factor <= 0.93) return { text: 'schwer', cls: 'trend-down', icon: '▼' };
+  return { text: 'mittel', cls: 'muted', icon: '●' };
+}
+
+// ---------- Punkte je Spiel ----------
+function parsePerformance(data, playerTid) {
+  const seasons = (data && data.it) || [];
+  const out = [];
+  seasons.forEach((s, si) => {
+    (s.ph || s.it || []).forEach(m => {
+      const date = parseKbDate(m.md ?? m.dt);
+      const points = num(m.p);
+      const minutes = parseMinutes(m.mp);
+      const team = String(m.pt ?? playerTid ?? '');
+      const home = team && String(m.t1) === team ? true : team && String(m.t2) === team ? false : null;
+      out.push({
+        season: si, day: num(m.day), date, points, minutes, team: team || null,
+        played: minutes != null ? minutes > 0 : (points != null && points !== 0),
+        home, opp: home === null ? null : String(home ? m.t2 : m.t1),
+        finished: date ? Date.now() - date.getTime() > MATCH_DURATION_MS : points != null
+      });
+    });
+  });
+  out.sort((a, b) => (a.date ? a.date.getTime() : 0) - (b.date ? b.date.getTime() : 0));
+  return out;
+}
+
+// Falls die API kein Spieldatum (md) liefert: aktuelle Saison (jüngster Saisonname) bekommt die Anstoßzeit
+// aus dem Spielplan, ältere Saisons ein fortlaufendes Ersatzdatum davor. Sonst würden diese Spiele
+// in Form, Einsatzquote und Prognose komplett fehlen.
+function fillMissingDates(games, data, md) {
+  if (!games.some(g => !g.date)) return games;
+  const seasons = (data && data.it) || [];
+  // Rang je Saison nach Name (jüngste = 0), unabhängig davon, in welcher Reihenfolge die API sie liefert
+  const order = seasons.map((s, i) => ({ i, n: String(s.n || '') })).sort((a, b) => b.n.localeCompare(a.n) || b.i - a.i);
+  const rankOf = {};
+  order.forEach((o, r) => { rankOf[o.i] = r; });
+  const cur = order.length ? order[0].i : -1;
+  const kickoff = {};
+  (md.info ? md.info.days : []).forEach(d => { if (d.first != null) kickoff[d.day] = d.first; });
+  const base = md.info && md.info.seasonStart ? md.info.seasonStart : Date.now() - 200 * 86400000;
+  games.forEach(g => {
+    if (g.date || g.day == null) return;
+    const t = g.season === cur ? kickoff[g.day] : base - ((rankOf[g.season] ?? 1) * 365 - g.day * 7) * 86400000 - 120 * 86400000;
+    if (t != null) { g.date = new Date(t); g.finished = Date.now() - t > MATCH_DURATION_MS; }
+  });
+  games.sort((a, b) => (a.date ? a.date.getTime() : 0) - (b.date ? b.date.getTime() : 0));
+  return games;
+}
+
+async function loadPerformance(player, md) {
+  const pid = getPid(player);
+  if (!pid) return null;
+  if (md.perf[pid]) return md.perf[pid];
+  const paths = [`/v4/competitions/${competitionId()}/players/${pid}/performance`, `/v4/leagues/${CURRENT_LEAGUE}/players/${pid}/performance`];
+  for (const path of paths) {
+    try {
+      const { data, cached } = await cachedGet(path);
+      if (!md.raw.performance) md.raw.performance = data;
+      md.perf[pid] = { games: fillMissingDates(parsePerformance(data, teamId(player)), data, md), cached };
+      return md.perf[pid];
+    } catch (e) { /* nächster Pfad */ }
+  }
+  return null;
+}
+
+// ---------- Punkte-Prognose (xP) ----------
+// xP = Einsatzwahrscheinlichkeit x Punkte je Einsatz x Gegner-/Heimfaktor
+//  - Punkte je Einsatz: letzte bis zu 10 Einsätze, das jüngste zählt voll, jedes ältere 25 % weniger,
+//    Vorsaison halb. Dazu 1,5 Spiele des Saison-Punkteschnitts (glättet Ausreißer, siehe priorFor).
+//  - Einsatzwahrscheinlichkeit: Einsätze in den letzten bis zu 5 beendeten Spieltagen, geglättet, mal Status.
+//  - Gegner/Heim: siehe oppFactor. Kein Spiel am Spieltag = 0.
+const XP = { decay: 0.75, lastSeason: 0.5, maxGames: 10, priorWeight: 1.5, recent: 5 };
+// Schrumpf-Ziel für Punkte je Einsatz: live der Saison-Punkteschnitt (ap) des Spielers selbst, in der
+// Rückrechnung sein Schnitt bis zum Stichtag (ap enthält spätere Spiele), sonst der Positions-Schnitt.
+// So rechnen Popup und Spieltag-Tab gleich, egal wie viele Spieler gerade geladen sind.
+function priorFor(player, games, ctx) {
+  if (!ctx.backtest) { const ap = avgPoints(player); if (ap != null && ap > 0) return ap; }
+  const before = games.filter(g => g.finished && g.played && g.points != null && g.date && g.date.getTime() >= ctx.seasonStart && g.date.getTime() < ctx.asOf);
+  if (before.length) return before.reduce((a, g) => a + g.points, 0) / before.length;
+  return ctx.posPrior[getPos(player)] ?? ctx.posPrior.all;
+}
+// Einsatz-Faktor aus dem Status (Codes siehe PLAYER_STATUS_MAP): angeschlagen (2) spielt oft trotzdem,
+// verletzt, Aufbautraining, gesperrt und unbekannte Codes fallen praktisch aus.
+function statusPlayFactor(st) { return st == null || st === 0 ? 1 : st === 2 ? 0.6 : 0.05; }
+function matchOf(tid, dayObj) { return dayObj && tid ? dayObj.matches.find(m => m.t1 === tid || m.t2 === tid) || null : null; }
+// Team eines Spielers: aus dem Spieler-Objekt, sonst aus seinem jüngsten Spiel in der Punkte-Historie
+function playerTeam(player, games) {
+  const t = teamId(player);
+  if (t) return t;
+  for (let i = games.length - 1; i >= 0; i--) if (games[i].team && games[i].finished) return games[i].team;
+  return '';
+}
+// Spieltage, an denen das Team des Spielers vor "asOf" ein beendetes Spiel hatte (für Einsatzquote und Form).
+// Pro Team statt pro Spieltag, damit verlegte Spiele und halb gespielte Spieltage nichts verfälschen.
+function teamMatchDays(ctx, tid) {
+  if (!ctx.fixtures || !tid) return ctx.finishedDays;
+  const out = [];
+  for (const d of ctx.fixtures) {
+    const m = d.matches.find(x => x.t1 === tid || x.t2 === tid);
+    if (m && m.finished && m.date && m.date.getTime() < ctx.asOf) out.push(d.day);
+  }
+  return out.sort((a, b) => a - b);
+}
+
+function playerForecast(player, games, ctx) {
+  const pos = getPos(player);
+  const tid = playerTeam(player, games);
+  const inSeason = g => g.date && g.date.getTime() >= ctx.seasonStart;
+  const past = games.filter(g => g.finished && g.date && g.date.getTime() < ctx.asOf);
+  const apps = past.filter(g => g.played && g.points != null).slice(-XP.maxGames);
+  let wSum = 0, pSum = 0;
+  for (let k = 0; k < apps.length; k++) {
+    const g = apps[apps.length - 1 - k];
+    const w = Math.pow(XP.decay, k) * (inSeason(g) ? 1 : XP.lastSeason);
+    wSum += w; pSum += w * g.points;
+  }
+  const perApp = (pSum + XP.priorWeight * priorFor(player, games, ctx)) / (wSum + XP.priorWeight);
+  const recentDays = teamMatchDays(ctx, tid).slice(-XP.recent);
+  const playedDays = new Set(past.filter(g => inSeason(g) && g.played).map(g => g.day));
+  const playedRecent = recentDays.filter(d => playedDays.has(d)).length;
+  const rate = recentDays.length ? (playedRecent + 0.5) / (recentDays.length + 1) : 0.5;
+  const match = matchOf(tid, ctx.target);
+  const pPlay = match ? (ctx.backtest ? 1 : statusPlayFactor(player.st)) * rate : 0;
+  let home = null, opp = null, factor = 1;
+  if (match) {
+    home = match.t1 === tid;
+    opp = home ? match.t2 : match.t1;
+    factor = oppFactor(pos, home, ctx.strengths.teams[opp]);
+  }
+  const sorted = apps.map(g => g.points).sort((a, b) => a - b);
+  return {
+    xp: pPlay * perApp * factor, perApp, pPlay, factor, home, opp, match, team: tid,
+    playedRecent, recentCount: recentDays.length,
+    range: sorted.length >= 4 ? [fcQuantile(sorted, 0.25) * factor, fcQuantile(sorted, 0.75) * factor] : null
+  };
+}
+
+// Positions-Durchschnitt (Punkte je Einsatz) über alle geladenen Spieler mit mindestens 3 Einsätzen
+function positionPriors(md, players, asOf = Infinity) {
+  const byPos = {}, all = [];
+  for (const p of players) {
+    const perf = md.perf[getPid(p)];
+    if (!perf) continue;
+    const apps = perf.games.filter(g => g.finished && g.played && g.points != null && (asOf === Infinity || (g.date && g.date.getTime() < asOf))).slice(-XP.maxGames);
+    if (apps.length < 3) continue;
+    const mean = apps.reduce((a, g) => a + g.points, 0) / apps.length;
+    (byPos[getPos(p)] = byPos[getPos(p)] || []).push(mean);
+    all.push(mean);
+  }
+  const avg = arr => arr.reduce((a, b) => a + b, 0) / arr.length;
+  const out = { all: all.length ? avg(all) : 50 };
+  for (const [pos, arr] of Object.entries(byPos)) out[pos] = avg(arr);
+  return out;
+}
+
+function mdPlayers() {
+  const squad = getCachedSquadPlayers();
+  const ids = new Set(squad.map(p => String(getPid(p))));
+  return { squad, market: LAST_MARKET_PLAYERS.filter(p => !ids.has(String(getPid(p)))) };
+}
+
+function forecastContext(md) {
+  const { squad, market } = mdPlayers();
+  return {
+    target: md.info ? md.info.next : null,
+    fixtures: md.fixtures,
+    asOf: Date.now(),
+    strengths: teamStrengths(md.fixtures, Date.now()),
+    posPrior: positionPriors(md, [...squad, ...market]),
+    finishedDays: md.info ? md.info.finishedDays : [],
+    seasonStart: md.info ? md.info.seasonStart : 0,
+    backtest: false
+  };
+}
+
+// Rückrechnung: Wie gut hätte die xP-Prognose an den letzten (bis zu 4) beendeten Spieltagen getroffen,
+// verglichen mit dem Punkteschnitt? Nur Daten von vor dem jeweiligen Anpfiff, Status wird ignoriert
+// (der heutige Verletzungsstatus galt damals nicht), Spieler ohne beendetes Spiel an dem Tag zählen nicht.
+// Aufstellungs-Vergleich mit deinem heutigen Kader.
+function modelCheck(md, squad) {
+  if (!md.info) return null;
+  const evalDays = md.info.finishedDays.filter(d => d >= 3).slice(-4);
+  let errModel = 0, errBase = 0, n = 0, ptsModel = 0, ptsBase = 0, ptsBest = 0, daysUsed = 0;
+  for (const day of evalDays) {
+    const dayObj = md.info.days.find(d => d.day === day);
+    if (!dayObj || dayObj.first == null) continue;
+    const { market } = mdPlayers();
+    const ctx = {
+      target: dayObj, fixtures: md.fixtures, asOf: dayObj.first, strengths: teamStrengths(md.fixtures, dayObj.first),
+      posPrior: positionPriors(md, [...squad, ...market], dayObj.first),
+      finishedDays: md.info.finishedDays.filter(d => d < day), seasonStart: md.info.seasonStart, backtest: true
+    };
+    const rows = new Map();
+    for (const p of squad) {
+      const perf = md.perf[getPid(p)];
+      if (!perf) continue;
+      const teamMatch = matchOf(playerTeam(p, perf.games), dayObj);
+      if (!teamMatch || !teamMatch.finished) continue; // sein Spiel an dem Tag steht noch aus (z.B. Nachholspiel)
+      const f = playerForecast(p, perf.games, ctx);
+      const g = perf.games.find(x => x.day === day && x.date && x.date.getTime() >= md.info.seasonStart);
+      const actual = g && g.played && g.points != null ? g.points : 0;
+      const before = perf.games.filter(x => x.finished && x.played && x.points != null && x.date && x.date.getTime() >= md.info.seasonStart && x.date.getTime() < dayObj.first);
+      const base = before.length ? before.reduce((a, x) => a + x.points, 0) / before.length : 0;
+      rows.set(String(getPid(p)), { xp: f.xp, base, actual });
+      errModel += Math.abs(f.xp - actual); errBase += Math.abs(base - actual); n++;
+    }
+    if (rows.size < 11) continue;
+    const pl = [...squad].filter(p => rows.has(String(getPid(p))));
+    const lm = computeBestLineupBy(pl, p => rows.get(String(getPid(p))).xp);
+    const lb = computeBestLineupBy(pl, p => rows.get(String(getPid(p))).base);
+    const lo = computeBestLineupBy(pl, p => rows.get(String(getPid(p))).actual);
+    if (!lm || !lb || !lo) continue;
+    const sumActual = l => l.starters.reduce((a, p) => a + rows.get(String(getPid(p))).actual, 0);
+    ptsModel += sumActual(lm); ptsBase += sumActual(lb); ptsBest += sumActual(lo); daysUsed++;
+  }
+  if (!n) return null;
+  return { maeModel: errModel / n, maeBase: errBase / n, n, ptsModel, ptsBase, ptsBest, daysUsed, from: evalDays[0], to: evalDays[evalDays.length - 1] };
+}
+
+// ---------- aktuelle Aufstellung ----------
+async function loadLineup(md) {
+  try {
+    const { data } = await cachedGet(`/v4/leagues/${CURRENT_LEAGUE}/lineup`, 2 * 60 * 1000);
+    md.raw.lineup = data;
+    const items = data && [data.it, data.lp, data.players].find(Array.isArray);
+    let ids = null;
+    if (!items) ids = null; // Struktur unbekannt
+    else if (items.length <= 11) ids = items.map(getPid); // auch 0 Einträge = niemand aufgestellt
+    else if (items.length > 11) {
+      const starters = items.filter(x => num(x.lo) > 0);
+      if (starters.length >= 1 && starters.length <= 11) ids = starters.map(getPid);
+    }
+    md.lineup = ids ? ids.filter(Boolean).map(String) : null;
+    md.sources.lineup = md.lineup ? `${md.lineup.length} Spieler aufgestellt` : `Struktur nicht erkannt (${items ? items.length : 0} Einträge)`;
+  } catch (e) {
+    md.lineup = null;
+    md.sources.lineup = 'Fehler ' + e.message;
+  }
+}
+
+// ---------- Laden & Anzeigen ----------
+function isTabVisible(tab) { const el = document.getElementById('tab-' + tab); return !!el && el.style.display !== 'none'; }
+
+function resetMatchdayUi() {
+  const set = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
+  set('mdCockpit', '<span class="muted">Öffne diesen Tab nach dem Laden der Liga, dann wird die Prognose berechnet.</span>');
+  ['mdSquad', 'mdLineup', 'mdMarket', 'mdCheck', 'mdFixtures', 'mdSources'].forEach(id => set(id, '<span class="muted">–</span>'));
+  set('ligaFormBox', '<span class="muted">Auf "Laden" klicken.</span>');
+  set('valueScatter', '<span class="muted">Erscheint, sobald Markt und Kader geladen sind.</span>');
+  const banner = document.getElementById('mdBannerPanel');
+  if (banner) banner.style.display = 'none';
+}
+
+function ensureMatchdayData() {
+  if (!CURRENT_LEAGUE) return;
+  const stale = MD.loadedAt && Date.now() - MD.loadedAt > API_TTL_MS; // älter als 30 Min: komplett neu laden
+  if (MD.loadedAt && !stale) renderMatchdayTab();
+  else if (!MD.loading) loadMatchdayData(!!stale);
+}
+
+async function loadMatchdayData(force) {
+  const status = document.getElementById('mdStatus');
+  if (!CURRENT_LEAGUE) { status.innerHTML = statusHtml('info', 'Wähle zuerst eine Liga oben im Start-Tab.'); return; }
+  const md = MD;
+  if (md.loading) return;
+  const { squad, market } = mdPlayers();
+  if (!squad.length) { status.innerHTML = statusHtml('info', 'Kader noch nicht geladen. Warte, bis die Liga fertig geladen ist, und klicke dann auf "Neu berechnen".'); return; }
+  if (force) {
+    for (const key of [...API_CACHE.keys()]) if (key.includes('/competitions/') || key.includes('/performance') || key.endsWith('/lineup')) API_CACHE.delete(key);
+    md.lineup = null; md.perf = {}; md.fixtures = null; md.info = null; md.loadedAt = null;
+  }
+  md.loading = true;
+  try {
+    status.innerHTML = '<span class="spinner"></span> Lade Spielplan und Tabelle…';
+    if (!md.fixtures || md.cpi !== competitionId()) await loadFixtures(md);
+    if (!Object.keys(md.teamNames).length) await loadBlTable(md);
+    status.innerHTML = '<span class="spinner"></span> Lade deine Aufstellung…';
+    await loadLineup(md);
+    // erst den Kader (dann sofort anzeigen), danach den Markt für den Booster
+    for (const [list, label] of [[squad, 'Kader'], [market, 'Markt']]) {
+      for (let i = 0; i < list.length; i++) {
+        if (md !== MD) return; // Liga gewechselt
+        status.innerHTML = `<span class="spinner"></span> Lade Punkte je Spieltag: ${label} (${i + 1}/${list.length})…`;
+        const res = await loadPerformance(list[i], md);
+        if (res && !res.cached) await sleep(120);
+      }
+      if (md !== MD) return;
+      md.loadedAt = Date.now();
+      renderMatchdayTab();
+    }
+  } finally {
+    md.loading = false;
+    if (md === MD) status.innerHTML = '';
+  }
+}
+
+function formBars(games, days5, seasonStart, scaleMax) {
+  const days = days5.slice(-5);
+  if (!days.length) return '<span class="muted">–</span>';
+  const byDay = new Map(games.filter(g => g.date && g.date.getTime() >= seasonStart).map(g => [g.day, g]));
+  return `<span class="mini-bars">${days.map(d => {
+    const g = byDay.get(d);
+    if (!g || !g.played || g.points == null) return `<i class="mb-none" data-tip="${esc(`Spieltag ${d}: nicht gespielt`)}"></i>`;
+    const h = Math.max(2, Math.round(Math.min(1, Math.abs(g.points) / scaleMax) * 20));
+    const vs = g.opp ? ` ${g.home ? 'gegen' : 'bei'} ${teamShort(g.opp)}` : '';
+    return `<i class="${g.points < 0 ? 'mb-neg' : 'mb-pos'}" style="height:${h}px;" data-tip="${esc(`Spieltag ${d}${vs}: ${g.points} Punkte${g.minutes != null ? `, ${g.minutes} Min` : ''}`)}"></i>`;
+  }).join('')}</span>`;
+}
+function opponentHtml(f) {
+  if (!f.match) return '<span class="trend-down">kein Spiel</span>';
+  const dif = difficulty(f.factor);
+  return `${f.home ? 'gegen' : 'bei'} <span title="${esc(teamFull(f.opp))}">${esc(teamShort(f.opp))}</span>
+    <span class="${dif.cls}" style="font-size:11px; white-space:nowrap;" title="Gegner- und Heimfaktor ${f.factor.toFixed(2).replace('.', ',')}">${dif.icon} ${dif.text}</span>`;
+}
+function fmtPts(x) { return x == null ? '–' : Math.round(x).toLocaleString('de-DE'); }
+
+let MD_SQUAD_ROWS = []; // für die Sortierung der Spieler-Tabelle
+function mdSquadSortValue(r, col) {
+  switch (col) {
+    case 'name': return playerName(r.p).toLowerCase();
+    case 'xp': return r.f ? r.f.xp : null;
+    case 'play': return r.f ? r.f.pPlay : null;
+    case 'opp': return r.f ? r.f.factor : null;
+    default: return null;
+  }
+}
+function renderMdSquadTable() {
+  const box = document.getElementById('mdSquad');
+  if (!MD_SQUAD_ROWS.length) { box.innerHTML = '<span class="muted">Keine Punkte-Historie für deinen Kader geladen.</span>'; return; }
+  const ctx = MD_SQUAD_ROWS.ctx;
+  const sorted = TABLE_SORT['mdSquad'] && TABLE_SORT['mdSquad'].col ? sortRowsGeneric('mdSquad', MD_SQUAD_ROWS, mdSquadSortValue) : [...MD_SQUAD_ROWS].sort((a, b) => (b.f ? b.f.xp : -1) - (a.f ? a.f.xp : -1));
+  const scale = Math.max(100, ...MD_SQUAD_ROWS.flatMap(r => r.games.filter(g => g.played && g.points != null).map(g => Math.abs(g.points))));
+  const rerender = 'renderMdSquadTable()';
+  const rows = sorted.map(r => {
+    const f = r.f;
+    if (!f) return `<tr><td>${playerCell(r.p)}</td><td colspan="5" class="muted">keine Punkte-Historie</td></tr>`;
+    return `<tr>
+      <td>${playerCell(r.p)}</td>
+      <td>${opponentHtml(f)}</td>
+      <td>${formBars(r.games, teamMatchDays(ctx, f.team), ctx.seasonStart, scale)}</td>
+      <td title="Einsätze in den letzten ${f.recentCount} beendeten Spieltagen">${f.recentCount ? `${f.playedRecent}/${f.recentCount}` : '–'} <span class="muted" style="font-size:11px;">(${Math.round(f.pPlay * 100)} %)</span></td>
+      <td style="font-weight:600;">${fmtPts(f.xp)}</td>
+      <td class="muted">${f.range ? `meist ${fmtPts(f.range[0])} bis ${fmtPts(f.range[1])}` : '–'}</td>
+    </tr>`;
+  }).join('');
+  box.innerHTML = `<table><thead><tr>
+      ${genericSortHeader('mdSquad', 'Spieler', 'name', rerender, true)}
+      ${genericSortHeader('mdSquad', 'Gegner', 'opp', rerender, false, 'Nach Gegner- und Heimfaktor sortieren (hoch = leichter)')}
+      <th>Form (letzte 5)</th>
+      ${genericSortHeader('mdSquad', 'Einsätze', 'play', rerender, false, 'Nach Einsatzwahrscheinlichkeit sortieren')}
+      ${genericSortHeader('mdSquad', 'xP', 'xp', rerender, false, 'Erwartete Punkte am nächsten Spieltag, sortieren')}
+      <th>Wenn er spielt</th>
+    </tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function lineupBadges(lineup, xpOf) {
+  return splitStartersByPosition(lineup.starters, lineup.formation).map(([label, list]) => `
+    <div class="row" style="gap:6px; align-items:center; margin-bottom:6px;">
+      <span class="muted" style="font-size:11px; width:32px; flex-shrink:0;">${label}</span>
+      <div class="row" style="gap:6px; flex-wrap:wrap;">${list.map(p => `<span class="badge">${avatarHtml(p)}${playerName(p)} · ${fmtPts(xpOf(p))}</span>`).join('')}</div>
+    </div>`).join('');
+}
+
+function renderMatchdayTab() {
+  const md = MD;
+  refreshMatchdayInfo(md);
+  const cockpit = document.getElementById('mdCockpit');
+  if (!md.info || !md.info.next) {
+    cockpit.innerHTML = statusHtml('info', 'Kein kommender Spieltag im Spielplan gefunden (Saisonende oder Spielplan nicht lesbar, siehe Datenquellen unten).');
+    ['mdSquad', 'mdLineup', 'mdMarket', 'mdCheck', 'mdFixtures'].forEach(id => { document.getElementById(id).innerHTML = '<span class="muted">–</span>'; });
+    MD_SQUAD_ROWS = [];
+    renderMdSources();
+    return;
+  }
+  const next = md.info.next;
+  const ctx = forecastContext(md);
+  const { squad, market } = mdPlayers();
+  const fOf = new Map();
+  for (const p of [...squad, ...market]) {
+    const perf = md.perf[getPid(p)];
+    if (perf) fOf.set(String(getPid(p)), { f: playerForecast(p, perf.games, ctx), games: perf.games });
+  }
+  const xpOf = p => { const e = fOf.get(String(getPid(p))); return e ? e.f.xp : 0; };
+
+  // Cockpit
+  const locked = next.first != null && next.first <= Date.now();
+  const budgetBad = CURRENT_BUDGET != null && CURRENT_BUDGET < 0;
+  const best = computeBestLineupBy(squad, xpOf);
+  let lineupInfo = '<span class="muted">Aufstellung nicht lesbar (siehe Datenquellen).</span>';
+  let lineupIssues = '';
+  if (md.lineup) {
+    const inLineup = squad.filter(p => md.lineup.includes(String(getPid(p))));
+    const sumNow = inLineup.reduce((a, p) => a + xpOf(p), 0);
+    const empty = Math.max(0, 11 - md.lineup.length);
+    const issues = inLineup.map(p => {
+      const e = fOf.get(String(getPid(p)));
+      if (!e) return null;
+      if (!e.f.match) return `${playerName(p)}: kein Spiel`;
+      if (p.st != null && p.st !== 0) return `${playerName(p)}: Status ${esc((PLAYER_STATUS_MAP[p.st] || {}).label || p.st)}`;
+      if (e.f.pPlay < 0.3) return `${playerName(p)}: kaum Einsätze zuletzt`;
+      return null;
+    }).filter(Boolean);
+    const gain = best ? best.total - sumNow : 0;
+    lineupInfo = `<b>${md.lineup.length}/11</b> aufgestellt · erwartet <b>${fmtPts(sumNow)}</b> Punkte${best ? ` · optimal <b>${fmtPts(best.total)}</b>` : ''}${gain > 5 ? ` <span class="trend-up">(+${fmtPts(gain)} möglich)</span>` : ''}`;
+    if (empty) issues.unshift(`${empty} ${empty === 1 ? 'Platz ist' : 'Plätze sind'} leer`);
+    if (issues.length) lineupIssues = statusHtml('err', 'Prüfen: ' + issues.join(' · '));
+  }
+  cockpit.innerHTML = `
+    <div class="row" style="gap:28px; margin:6px 0 14px;">
+      <div><div class="muted" style="font-size:12px;">Spieltag</div><div style="font-size:26px; font-weight:700;">${next.day}</div></div>
+      <div><div class="muted" style="font-size:12px;">${locked ? 'Läuft seit' : 'Anpfiff (Aufstellungsschluss)'}</div><div style="font-size:18px;">${next.first != null ? fmtKickoff(next.first) : '–'}</div></div>
+      <div><div class="muted" style="font-size:12px;">Countdown</div><div style="font-size:18px;" ${locked ? '' : `data-countdown="${next.first}"`}>${locked ? 'Aufstellung gesperrt' : fmtCountdown(next.first - Date.now())}</div></div>
+      <div><div class="muted" style="font-size:12px;">Kontostand</div><div style="font-size:18px;" class="${budgetBad ? 'trend-down' : 'trend-up'}">${CURRENT_BUDGET != null ? fmtMoney(CURRENT_BUDGET) : '–'}</div></div>
+    </div>
+    ${budgetBad ? statusHtml('err', `Kontostand im Minus: Ist er bei Anpfiff noch negativ, gibt es für diesen Spieltag keine Punkte. <a class="link" onclick="switchTab('sell')">Zu den Verkaufsszenarien</a>`) : ''}
+    <div style="font-size:13px; margin-top:4px;">Deine Aufstellung: ${lineupInfo}</div>
+    ${lineupIssues}`;
+
+  // Spieler-Tabelle
+  MD_SQUAD_ROWS = squad.map(p => { const e = fOf.get(String(getPid(p))); return { p, f: e ? e.f : null, games: e ? e.games : [] }; });
+  MD_SQUAD_ROWS.ctx = ctx;
+  renderMdSquadTable();
+
+  // Beste Aufstellung
+  const lineupBox = document.getElementById('mdLineup');
+  const byAvg = computeBestLineup(squad);
+  if (best) {
+    const avgSum = byAvg ? byAvg.starters.reduce((a, p) => a + xpOf(p), 0) : null;
+    const nowIds = md.lineup || [];
+    const ins = md.lineup ? best.starters.filter(p => !nowIds.includes(String(getPid(p)))) : [];
+    const outs = md.lineup ? squad.filter(p => nowIds.includes(String(getPid(p))) && !best.starters.includes(p)) : [];
+    lineupBox.innerHTML = `
+      <div class="row" style="gap:24px; margin-bottom:12px;">
+        <div><div class="muted" style="font-size:12px;">Formation</div><div style="font-size:18px;">${best.formation.def}-${best.formation.mid}-${best.formation.fwd}</div></div>
+        <div><div class="muted" style="font-size:12px;">Erwartete Punkte</div><div style="font-size:18px;">${fmtPts(best.total)}</div></div>
+        ${avgSum != null ? `<div><div class="muted" style="font-size:12px;">nach Punkteschnitt</div><div style="font-size:18px;">${fmtPts(avgSum)}</div></div>` : ''}
+      </div>
+      ${lineupBadges(best, xpOf)}
+      ${md.lineup && (ins.length || outs.length) ? `<p style="font-size:13px; margin:12px 0 0;"><span class="trend-up">Rein:</span> ${ins.map(p => playerName(p)).join(', ') || '–'}<br><span class="trend-down">Raus:</span> ${outs.map(p => playerName(p)).join(', ') || '–'}</p>` : ''}
+      ${md.lineup && !ins.length && !outs.length ? '<p class="trend-up" style="font-size:13px; margin:12px 0 0;">Deine aktuelle Aufstellung entspricht der xP-Empfehlung.</p>' : ''}
+      <p class="muted" style="font-size:11px; margin:10px 0 0;">Setzen musst du die Aufstellung weiterhin in der Kickbase-App, das Dashboard ändert nichts.</p>`;
+  } else {
+    lineupBox.innerHTML = '<span class="muted">Mit dem aktuellen Kader ist keine gültige Formation möglich.</span>';
+  }
+
+  // Spieltags-Booster vom Markt
+  const marketBox = document.getElementById('mdMarket');
+  const boost = market.map(p => ({ p, e: fOf.get(String(getPid(p))) })).filter(x => x.e && x.e.f.match)
+    .sort((a, b) => b.e.f.xp - a.e.f.xp).slice(0, 8);
+  marketBox.innerHTML = boost.length ? `<table><thead><tr><th>Spieler</th><th>Gegner</th><th>xP</th><th title="Erwartete Punkte je Million Marktwert">xP je Mio</th><th title="Läuft das Angebot vor dem Anpfiff ab, kann er noch aufgestellt werden">Rechtzeitig</th></tr></thead><tbody>
+      ${boost.map(({ p, e }) => {
+        const mv = p.marketValue ?? p.mv;
+        const exp = p._expiresAt;
+        const inTime = exp == null ? '<span class="muted">?</span>' : exp < next.first ? `<span class="trend-up" title="Angebot endet ${esc(fmtKickoff(exp))}">✓</span>` : `<span class="trend-down" title="Angebot endet erst ${esc(fmtKickoff(exp))}">✗</span>`;
+        return `<tr><td>${playerCell(p)}</td><td>${opponentHtml(e.f)}</td><td style="font-weight:600;">${fmtPts(e.f.xp)}</td><td>${mv ? (e.f.xp / (mv / 1e6)).toLocaleString('de-DE', { maximumFractionDigits: 1 }) : '–'}</td><td style="text-align:center;">${inTime}</td></tr>`;
+      }).join('')}
+    </tbody></table>` : '<span class="muted">Noch keine Punkte-Historie für Marktspieler geladen.</span>';
+
+  // Modell-Check
+  const check = modelCheck(md, squad);
+  const checkBox = document.getElementById('mdCheck');
+  if (!check) {
+    checkBox.innerHTML = '<span class="muted">Noch zu wenige beendete Spieltage für eine Rückrechnung (ab Spieltag 3).</span>';
+  } else {
+    const verdict = check.maeModel < check.maeBase * 0.97 ? 'better' : check.maeModel > check.maeBase * 1.03 ? 'worse' : 'equal';
+    const better = verdict === 'better';
+    const lineupGain = check.ptsModel - check.ptsBase;
+    checkBox.innerHTML = `
+      <div class="row" style="gap:28px; margin-bottom:10px;">
+        <div><div class="muted" style="font-size:12px;">Ø Abweichung je Spieler (xP)</div><div style="font-size:18px;" class="${better ? 'trend-up' : verdict === 'worse' ? 'trend-down' : ''}">${fmtPts(check.maeModel)} Punkte</div></div>
+        <div><div class="muted" style="font-size:12px;">Ø Abweichung (Punkteschnitt)</div><div style="font-size:18px;">${fmtPts(check.maeBase)} Punkte</div></div>
+        ${check.daysUsed ? `<div><div class="muted" style="font-size:12px;">Aufstellung nach xP</div><div style="font-size:18px;">${fmtPts(check.ptsModel)}</div></div>
+        <div><div class="muted" style="font-size:12px;">nach Punkteschnitt</div><div style="font-size:18px;">${fmtPts(check.ptsBase)}</div></div>
+        <div><div class="muted" style="font-size:12px;">bestmöglich</div><div style="font-size:18px;">${fmtPts(check.ptsBest)}</div></div>` : ''}
+      </div>
+      <p class="muted" style="font-size:12px; margin:0;">Rückrechnung über Spieltag ${check.from} bis ${check.to} mit deinem heutigen Kader: Die Prognose nutzt jeweils nur, was vor dem Anpfiff bekannt war. ${check.daysUsed ? `Die Aufstellungs-Summen zeigen die echten Punkte, die die jeweilige Methode über ${check.daysUsed} Spieltage geholt hätte: <b class="${lineupGain >= 0 ? 'trend-up' : 'trend-down'}">${lineupGain >= 0 ? '+' : ''}${fmtPts(lineupGain)} Punkte</b> für die xP-Aufstellung.` : ''} ${verdict === 'better' ? 'Je Spieler lag die xP-Prognose näher an den echten Punkten als der Punkteschnitt.' : verdict === 'worse' ? 'Je Spieler lag der Punkteschnitt hier näher dran, die xP-Werte also mit Vorsicht nutzen.' : 'Je Spieler lagen beide Methoden etwa gleich weit daneben.'}</p>`;
+  }
+
+  // Spielplan des nächsten Spieltags
+  const myTeams = new Map();
+  squad.forEach(p => { const t = teamId(p); if (t) (myTeams.get(t) || myTeams.set(t, []).get(t)).push(p); });
+  document.getElementById('mdFixtures').innerHTML = `<table><thead><tr><th>Anpfiff</th><th>Spiel</th><th>Deine Spieler</th></tr></thead><tbody>
+    ${[...next.matches].sort((a, b) => (a.date ? a.date.getTime() : 0) - (b.date ? b.date.getTime() : 0)).map(m => {
+      const mine = [...(myTeams.get(m.t1) || []), ...(myTeams.get(m.t2) || [])];
+      return `<tr><td>${m.date ? fmtKickoff(m.date) : '–'}</td><td><span title="${esc(teamFull(m.t1))}">${esc(teamShort(m.t1))}</span> gegen <span title="${esc(teamFull(m.t2))}">${esc(teamShort(m.t2))}</span></td><td>${mine.length ? mine.map(p => playerName(p)).join(', ') : '<span class="muted">–</span>'}</td></tr>`;
+    }).join('')}
+  </tbody></table>`;
+
+  renderMdSources();
+  updateCountdowns();
+}
+
+function renderMdSources() {
+  const md = MD;
+  const perfCount = Object.keys(md.perf).length;
+  const entries = [
+    ['Spielplan', md.sources.fixtures || 'nicht geladen'],
+    ['Tabelle', md.sources.table || 'nicht geladen'],
+    ['Aufstellung', md.sources.lineup || 'nicht geladen'],
+    ['Punkte-Historie', `${perfCount} Spieler`]
+  ];
+  document.getElementById('mdSources').innerHTML = `${entries.map(([k, v]) => `${k}: ${esc(v)}`).join(' · ')}
+    <div style="margin-top:8px;"><a class="link" onclick="toggleMdRaw()">Rohdaten anzeigen (Ausschnitt)</a></div>
+    <div id="mdRawBox" style="display:none; margin-top:10px;"><pre>${esc(JSON.stringify({
+      spielplan_erster_spieltag: md.raw.fixtures && md.raw.fixtures.it ? md.raw.fixtures.it[0] : md.raw.fixtures,
+      aufstellung: md.raw.lineup,
+      punkte_beispiel: md.raw.performance
+    }, null, 2))}</pre></div>`;
+}
+function toggleMdRaw() {
+  const el = document.getElementById('mdRawBox');
+  if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+// Satz für den Prognose-Kasten: liegt der nächste Spieltag im 4-Tage-Fenster, wird das konkret benannt
+function matchdayNote(lastDate) {
+  const n = MD.info && MD.info.next;
+  const t = lastDate ? new Date(lastDate).getTime() : null;
+  if (n && n.first != null && t != null && n.first > t && n.first <= t + FC_HORIZON * 86400000) {
+    return ` Spieltag ${n.day} (Anpfiff ${fmtKickoff(n.first)}) liegt im Prognosezeitraum: Danach bewegen gute oder schwache Punkte die Nachfrage, das Ergebnis kennt das Modell nicht.`;
+  }
+  return ' Spieltage, Verletzungen und Aufstellungsnews kennt das Modell nicht.';
+}
+
+// ---------- Banner "Nächster Spieltag" im Start-Tab ----------
+function renderMatchdayBanner() {
+  const panel = document.getElementById('mdBannerPanel');
+  const box = document.getElementById('mdBanner');
+  if (!panel || !box) return;
+  refreshMatchdayInfo(MD);
+  const next = MD.info && MD.info.next;
+  if (!next || next.first == null) { panel.style.display = 'none'; return; }
+  panel.style.display = 'block';
+  const locked = next.first <= Date.now();
+  const budgetBad = CURRENT_BUDGET != null && CURRENT_BUDGET < 0;
+  box.innerHTML = `<div class="row" style="justify-content:space-between; gap:12px;">
+      <div class="row" style="gap:22px;">
+        <div><div class="muted" style="font-size:12px;">Nächster Spieltag</div><div style="font-size:22px; font-weight:700;">${next.day}</div></div>
+        <div><div class="muted" style="font-size:12px;">${locked ? 'Läuft seit' : 'Anpfiff'}</div><div style="font-size:15px;">${fmtKickoff(next.first)}</div></div>
+        <div><div class="muted" style="font-size:12px;">Aufstellungsschluss</div><div style="font-size:15px;" ${locked ? '' : `data-countdown="${next.first}"`}>${locked ? 'gesperrt' : fmtCountdown(next.first - Date.now())}</div></div>
+      </div>
+      <button class="primary" style="width:auto; margin:0; padding:8px 14px;" onclick="switchTab('matchday')">Zur Spieltags-Prognose</button>
+    </div>
+    ${budgetBad ? statusHtml('err', `Kontostand ${fmtMoney(CURRENT_BUDGET)}: Ist er bei Anpfiff noch im Minus, gibt es für diesen Spieltag keine Punkte. <a class="link" onclick="switchTab('sell')">Zu den Verkaufsszenarien</a>`) : ''}`;
+  if (budgetBad) { const st = box.querySelector('.status'); st.style.marginTop = '12px'; st.style.marginBottom = '0'; }
+}
+
+// ---------- Popup: Punkte je Spieltag + nächstes Spiel ----------
+async function loadPopupPoints(playerId, req) {
+  const md = MD;
+  const player = PLAYER_CACHE[playerId] || { i: playerId };
+  const box0 = document.getElementById('valueModalPoints');
+  if (!box0) return;
+  box0.innerHTML = '<span class="spinner"></span> Lade Punkte je Spieltag…';
+  if (!md.fixtures) await loadFixtures(md);
+  const perf = await loadPerformance(player, md);
+  const box = document.getElementById('valueModalPoints');
+  if (req !== VALUE_MODAL_REQ || md !== MD || !box) return;
+  if (!perf || !perf.games.some(g => g.finished && g.points != null)) {
+    box.innerHTML = '<p class="muted" style="font-size:12px;">Keine Punkte-Historie verfügbar.</p>';
+    return;
+  }
+  refreshMatchdayInfo(md);
+  const ctx = forecastContext(md);
+  const f = ctx.target ? playerForecast(player, perf.games, ctx) : null;
+  box.innerHTML = pointsSectionHtml(perf.games, f, ctx);
+}
+
+function pointsSectionHtml(games, f, ctx) {
+  // aktuelle Saison: ab Saisonstart laut Spielplan, sonst die jüngste Saison in der Historie
+  const finished = games.filter(g => g.finished && g.day != null);
+  const latestSeason = finished.length ? finished[finished.length - 1].season : null;
+  let season = ctx.seasonStart ? finished.filter(g => g.date && g.date.getTime() >= ctx.seasonStart) : finished.filter(g => g.season === latestSeason);
+  let note = '';
+  if (!season.length) { season = finished.filter(g => g.season === latestSeason); note = 'Diese Saison noch ohne Spiel, gezeigt wird die Vorsaison.'; }
+  let days = note ? [] : teamMatchDays(ctx, f ? f.team : playerTeam({}, games));
+  if (!days.length) days = [...new Set(season.map(g => g.day))].sort((a, b) => a - b);
+  const byDay = new Map(season.map(g => [g.day, g]));
+  const entries = days.map(d => ({ day: d, g: byDay.get(d) || null }));
+  const vals = entries.filter(e => e.g && e.g.played && e.g.points != null).map(e => e.g.points);
+  const avg = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+  const maxV = Math.max(10, ...vals), minV = Math.min(0, ...vals);
+  const y = v => ((maxV - v) / (maxV - minV)) * 100;
+  const n = entries.length;
+  const bars = entries.map((e, i) => {
+    const left = ((i + 0.5) / n) * 100;
+    const vs = e.g && e.g.opp ? ` ${e.g.home ? 'gegen' : 'bei'} ${teamShort(e.g.opp)}` : '';
+    if (!e.g || !e.g.played || e.g.points == null) {
+      return `<i class="pb-none" style="left:${left}%; top:${y(0)}%;" tabindex="0" data-tip="${esc(`Spieltag ${e.day}${vs}: nicht gespielt`)}"></i>`;
+    }
+    const v = e.g.points;
+    const top = v >= 0 ? y(v) : y(0), height = Math.max(0.8, Math.abs(y(v) - y(0)));
+    return `<i class="pb-bar ${v < 0 ? 'neg' : ''}" style="left:${left}%; top:${top}%; height:${height}%; width:min(24px, calc(${100 / n}% - 4px));" tabindex="0"
+      data-tip="${esc(`Spieltag ${e.day}${vs}\n${v} Punkte${e.g.minutes != null ? ` · ${e.g.minutes} Min` : ''}`)}"></i>`;
+  }).join('');
+  const labelEvery = n > 17 ? 2 : 1;
+  const xl = entries.map((e, i) => i % labelEvery === 0 || i === n - 1 ? `<span style="left:${((i + 0.5) / n) * 100}%;">${e.day}</span>` : '').join('');
+  let nextHtml = '';
+  if (f) {
+    if (!f.match) nextHtml = `<p class="trend-down" style="font-size:13px;">Spieltag ${ctx.target.day}: Sein Team hat laut Spielplan kein Spiel.</p>`;
+    else {
+      const dif = difficulty(f.factor);
+      nextHtml = `<div class="fc-box" style="margin-top:12px;">
+        <div class="row" style="justify-content:space-between; margin-bottom:8px;">
+          <span class="muted" style="font-size:11px; text-transform:uppercase; letter-spacing:0.5px;">Spieltag ${ctx.target.day} · ${f.match.date ? esc(fmtKickoff(f.match.date)) : ''}</span>
+          <span class="${dif.cls}" style="font-weight:600;">${dif.icon} Gegner ${dif.text}</span>
+        </div>
+        <div class="row" style="gap:24px;">
+          <div><div class="muted" style="font-size:12px;">Spiel</div><div style="font-size:16px;">${f.home ? 'gegen' : 'bei'} ${esc(teamFull(f.opp))}</div></div>
+          <div><div class="muted" style="font-size:12px;">Erwartete Punkte (xP)</div><div style="font-size:18px; font-weight:600;">${fmtPts(f.xp)}</div></div>
+          <div><div class="muted" style="font-size:12px;">Wenn er spielt</div><div style="font-size:14px; margin-top:3px;">${f.range ? `meist ${fmtPts(f.range[0])} bis ${fmtPts(f.range[1])}` : `ca. ${fmtPts(f.perApp * f.factor)}`}</div></div>
+          <div><div class="muted" style="font-size:12px;">Einsatzwahrscheinlichkeit</div><div style="font-size:18px;">${Math.round(f.pPlay * 100)} %</div></div>
+        </div>
+        <p class="muted" style="font-size:11px; margin:10px 0 0; line-height:1.5;">xP = Einsatzwahrscheinlichkeit (Einsätze der letzten Spieltage, Status) × Punkte je Einsatz (jüngste Spiele zählen mehr) × Gegner- und Heimfaktor ${f.factor.toFixed(2).replace('.', ',')}.</p>
+      </div>`;
+    }
+  }
+  return `<h3 style="font-size:13px; margin:18px 0 8px;">Punkte je Spieltag</h3>
+    ${note ? `<p class="muted" style="font-size:12px; margin:0 0 8px;">${note}</p>` : ''}
+    <div class="row" style="gap:24px; margin-bottom:10px;">
+      <div><div class="muted" style="font-size:12px;">Ø je Einsatz</div><div style="font-size:18px;">${fmtPts(avg)}</div></div>
+      <div><div class="muted" style="font-size:12px;">Einsätze</div><div style="font-size:18px;">${vals.length}/${n}</div></div>
+      <div><div class="muted" style="font-size:12px;">Bestwert</div><div style="font-size:18px;">${vals.length ? fmtPts(Math.max(...vals)) : '–'}</div></div>
+    </div>
+    <div class="pb-chart">
+      <div class="pb-zero" style="top:${y(0)}%;"></div>
+      ${avg != null ? `<div class="pb-avg" style="top:${y(avg)}%;"><span>Ø ${fmtPts(avg)}</span></div>` : ''}
+      ${bars}
+    </div>
+    <div class="pb-x">${xl}</div>
+    ${nextHtml}`;
+}
+
+// ---------- Markt: Preis-Leistung (Marktwert gegen Punkteschnitt) ----------
+function renderValueScatter() {
+  const box = document.getElementById('valueScatter');
+  if (!box) return;
+  const squad = getCachedSquadPlayers();
+  const ids = new Set(squad.map(p => String(getPid(p))));
+  const pts = [
+    ...squad.map(p => ({ p, kind: 'squad' })),
+    ...LAST_MARKET_PLAYERS.filter(p => !ids.has(String(getPid(p)))).map(p => ({ p, kind: 'market' }))
+  ].map(o => ({ ...o, mv: o.p.marketValue ?? o.p.mv, ap: avgPoints(o.p) }))
+    .filter(o => o.mv > 0 && o.ap != null && o.ap > 0);
+  if (pts.length < 4) { box.innerHTML = '<span class="muted">Zu wenige Spieler mit Marktwert und Punkteschnitt.</span>'; return; }
+  pts.forEach(o => { o.ppm = o.ap / (o.mv / 1e6); });
+  const lx = pts.map(o => Math.log10(o.mv)), ys = pts.map(o => o.ap);
+  const x0 = Math.min(...lx), x1 = Math.max(...lx), y1 = Math.max(...ys) * 1.08;
+  const X = v => 4 + ((Math.log10(v) - x0) / ((x1 - x0) || 1)) * 92;
+  const Y = v => 94 - (v / y1) * 88;
+  const median = arr => { const s = [...arr].sort((a, b) => a - b); const m = Math.floor(s.length / 2); return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+  const mx = median(pts.map(o => o.mv)), my = median(ys);
+  const bargains = pts.filter(o => o.kind === 'market' && o.mv <= mx && o.ap >= my).sort((a, b) => b.ppm - a.ppm).slice(0, 3);
+  const dot = o => `<i class="sc-dot ${o.kind}" style="left:${X(o.mv).toFixed(2)}%; top:${Y(o.ap).toFixed(2)}%;" tabindex="0"
+      data-tip="${esc(`${playerNameRaw(o.p)} (${o.kind === 'squad' ? 'dein Kader' : 'Markt'})\n${fmtMoney(o.mv)} · Ø ${fmtPts(o.ap)} Punkte\n${o.ppm.toLocaleString('de-DE', { maximumFractionDigits: 1 })} Punkte je Mio €`)}"></i>`;
+  const ticks = [];
+  for (let k = Math.floor(x0); k <= Math.ceil(x1); k++) {
+    for (const f of [1, 2, 5]) { const v = f * Math.pow(10, k); if (Math.log10(v) >= x0 - 1e-9 && Math.log10(v) <= x1 + 1e-9) ticks.push(v); }
+  }
+  const rawStep = y1 / 4, mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
+  const step = [1, 2, 5, 10].map(f => f * mag).find(v => y1 / v <= 5);
+  const yTicks = [];
+  for (let v = 0; v <= y1; v += step) yTicks.push(v);
+  const top = [...pts].filter(o => o.kind === 'market').sort((a, b) => b.ppm - a.ppm).slice(0, 8);
+  box.innerHTML = `
+    <div class="vc-legend" style="margin-bottom:8px;"><span><span class="sc-key squad"></span>Dein Kader</span><span><span class="sc-key market"></span>Transfermarkt</span></div>
+    <div class="sc-plot">
+      <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+        <line x1="${X(mx).toFixed(2)}" x2="${X(mx).toFixed(2)}" y1="0" y2="100" stroke="#2a2f3a" stroke-width="1" vector-effect="non-scaling-stroke" />
+        <line x1="0" x2="100" y1="${Y(my).toFixed(2)}" y2="${Y(my).toFixed(2)}" stroke="#2a2f3a" stroke-width="1" vector-effect="non-scaling-stroke" />
+      </svg>
+      <span class="sc-q" style="left:6px; top:6px;">günstig &amp; stark</span>
+      <span class="sc-q" style="right:6px; top:6px;">teuer &amp; stark</span>
+      <span class="sc-q" style="left:6px; bottom:6px;">günstig &amp; schwach</span>
+      <span class="sc-q" style="right:6px; bottom:6px;">teuer &amp; schwach</span>
+      ${yTicks.map(v => `<span class="vc-ylab" style="top:${Y(v).toFixed(2)}%;">${fmtPts(v)}</span>`).join('')}
+      ${pts.map(dot).join('')}
+      ${bargains.map(o => `<span class="sc-label" style="left:${X(o.mv).toFixed(2)}%; top:${Y(o.ap).toFixed(2)}%;">${playerName(o.p)}</span>`).join('')}
+    </div>
+    <div class="vc-xaxis">${ticks.map(t => `<span style="left:${X(t).toFixed(2)}%; transform:translateX(-50%);">${compactMoney(t)}</span>`).join('')}</div>
+    <p class="muted" style="font-size:12px; margin:6px 0 12px;">x-Achse logarithmisch (Marktwert), y-Achse Punkteschnitt. Linien = Median aller gezeigten Spieler.</p>
+    <h3 style="font-size:13px;">Beste Preis-Leistung am Markt</h3>
+    <table><thead><tr><th>Spieler</th><th>Marktwert</th><th>Ø Punkte</th><th>Punkte je Mio €</th></tr></thead><tbody>
+      ${top.map(o => `<tr><td>${playerCell(o.p)}</td><td>${fmtMoney(o.mv)}</td><td>${fmtPts(o.ap)}</td><td>${o.ppm.toLocaleString('de-DE', { maximumFractionDigits: 1 })}</td></tr>`).join('')}
+    </tbody></table>`;
+}
+function marketExpiryHtml(p) {
+  if (!p._expiresAt) return '';
+  const ms = p._expiresAt - Date.now();
+  return `<div class="muted" style="font-size:11px;">${ms > 0 ? 'Angebot ' + fmtCountdown(ms) : 'Angebot abgelaufen'}</div>`;
+}
+
+// ---------- Andere Teams: Liga-Form (Punkte je Spieltag aller Manager) ----------
+async function loadLigaForm() {
+  const box = document.getElementById('ligaFormBox');
+  if (!CURRENT_LEAGUE) { box.innerHTML = '<span class="muted">Wähle zuerst eine Liga oben im Start-Tab.</span>'; return; }
+  if (LIGA_FORM_LOADING === CURRENT_LEAGUE) return;
+  const league = CURRENT_LEAGUE;
+  LIGA_FORM_LOADING = league;
+  try {
+    if (!LEAGUE_MANAGERS.length) await loadManagers();
+    await loadLigaFormRows(league, box);
+  } finally {
+    if (LIGA_FORM_LOADING === league) LIGA_FORM_LOADING = null;
+  }
+}
+async function loadLigaFormRows(league, box) {
+  const rows = [];
+  for (let i = 0; i < LEAGUE_MANAGERS.length; i++) {
+    const m = LEAGUE_MANAGERS[i];
+    box.innerHTML = `<span class="spinner"></span> Lade Punkte je Spieltag (${i + 1}/${LEAGUE_MANAGERS.length})…`;
+    try {
+      const { data, cached } = await cachedGet(`/v4/leagues/${league}/managers/${m.id}/performance`);
+      const seasons = (data && data.it) || [];
+      const latestOf = s => Math.max(0, ...((s.it || []).map(x => { const d = parseKbDate(x.md); return d ? d.getTime() : 0; })));
+      // aktuelle Saison: jüngstes Datum, sonst größter Saisonname, sonst letzter Eintrag
+      const season = seasons.map((s, i) => ({ s, i, t: latestOf(s), n: String(s.sn || s.n || '') }))
+        .sort((a, b) => (b.t - a.t) || b.n.localeCompare(a.n) || (b.i - a.i)).map(x => x.s)[0];
+      const pts = new Map();
+      ((season && season.it) || []).forEach(x => { const d = num(x.day), p = num(x.mdp ?? x.p); if (d != null && p != null) pts.set(d, p); });
+      rows.push({ m, pts });
+      if (!cached) await sleep(120);
+    } catch (e) { rows.push({ m, pts: new Map(), error: e.message }); }
+    if (CURRENT_LEAGUE !== league) return; // Liga gewechselt
+  }
+  const days = [...new Set(rows.flatMap(r => [...r.pts.keys()]))].sort((a, b) => a - b);
+  LIGA_FORM = { rows, days };
+  renderLigaForm();
+}
+function renderLigaForm() {
+  const box = document.getElementById('ligaFormBox');
+  if (!LIGA_FORM || !LIGA_FORM.days.length) { box.innerHTML = '<span class="muted">Keine Punkte je Spieltag gefunden.</span>'; return; }
+  const { rows, days } = LIGA_FORM;
+  const last = days[days.length - 1], prev = days.length > 1 ? days[days.length - 2] : null;
+  const total = (r, upTo) => days.filter(d => upTo == null || d <= upTo).reduce((a, d) => a + (r.pts.get(d) ?? 0), 0);
+  const wins = new Map(rows.map(r => [r, 0]));
+  days.forEach(d => {
+    const vals = rows.map(r => r.pts.get(d)).filter(v => v != null);
+    if (!vals.length) return;
+    const best = Math.max(...vals);
+    rows.forEach(r => { if (r.pts.get(d) === best) wins.set(r, wins.get(r) + 1); });
+  });
+  const rankBy = upTo => { const s = [...rows].sort((a, b) => total(b, upTo) - total(a, upTo)); return new Map(s.map((r, i) => [r, i + 1])); };
+  const rNow = rankBy(null), rPrev = prev != null ? rankBy(prev) : null;
+  const leader = Math.max(...rows.map(r => total(r, null)));
+  const scale = Math.max(1, ...rows.flatMap(r => [...r.pts.values()].map(Math.abs)));
+  const shown = days.slice(-8);
+  const sorted = [...rows].sort((a, b) => rNow.get(a) - rNow.get(b));
+  box.innerHTML = `<table><thead><tr><th>#</th><th>Manager</th><th>Gesamt</th><th>Spieltag ${last}</th><th>Ø letzte 3</th><th>Form (letzte ${shown.length})</th><th>Spieltagssiege</th><th>Abstand</th></tr></thead><tbody>
+    ${sorted.map(r => {
+      const me = OWN_USER_ID && String(r.m.id) === String(OWN_USER_ID);
+      const l3 = days.slice(-3).map(d => r.pts.get(d)).filter(v => v != null);
+      const delta = rPrev ? rPrev.get(r) - rNow.get(r) : 0;
+      const trend = delta > 0 ? `<span class="trend-up">▲${delta}</span>` : delta < 0 ? `<span class="trend-down">▼${-delta}</span>` : '<span class="muted">●</span>';
+      const spark = `<span class="mini-bars">${shown.map(d => {
+        const v = r.pts.get(d);
+        if (v == null) return `<i class="mb-none" data-tip="${esc(`Spieltag ${d}: keine Punkte`)}"></i>`;
+        return `<i class="${v < 0 ? 'mb-neg' : 'mb-pos'}" style="height:${Math.max(2, Math.round(Math.abs(v) / scale * 20))}px;" data-tip="${esc(`Spieltag ${d}: ${v} Punkte`)}"></i>`;
+      }).join('')}</span>`;
+      return `<tr${me ? ' style="font-weight:600;"' : ''}><td>${rNow.get(r)} ${trend}</td><td>${esc(r.m.name)}${me ? ' <span class="badge">Du</span>' : ''}${r.error ? ' <span class="muted" style="font-size:11px;">(Fehler)</span>' : ''}</td>
+        <td>${fmtPts(total(r, null))}</td><td>${fmtPts(r.pts.get(last))}</td><td>${l3.length ? fmtPts(l3.reduce((a, b) => a + b, 0) / l3.length) : '–'}</td>
+        <td>${spark}</td><td>${wins.get(r)}</td><td>${total(r, null) === leader ? '<span class="muted">Spitze</span>' : '-' + fmtPts(leader - total(r, null))}</td></tr>`;
+    }).join('')}
+  </tbody></table>
+  <p class="muted" style="font-size:12px; margin-top:8px;">Gesamt = Summe der Spieltagspunkte dieser Saison. ▲/▼ = Plätze gewonnen oder verloren durch Spieltag ${last}.</p>`;
+}
+// ---------- Ende Spieltag-Modul ----------
 
 // ---------- api test ----------
 async function apiTest() {
