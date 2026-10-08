@@ -112,7 +112,7 @@
   nav#tabs button.active { color: var(--accent); border-bottom-color: var(--accent); }
   nav#tabs button:hover:not(.active) { color: var(--text); }
 
-  main { padding: 24px; max-width: 1100px; margin: 0 auto; }
+  main { padding: 24px; max-width: 1200px; margin: 0 auto; } /* 1200 statt 1100: Platz für die Prognose-Spalte im Markt ohne Zeilenumbrüche */
   .panel {
     background: var(--panel);
     border: 1px solid var(--border);
@@ -162,6 +162,22 @@
   @keyframes spin { to { transform: rotate(360deg); } }
   code { background: var(--panel-2); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
 
+  /* ---------- Verlaufs-Chart mit Prognose ---------- */
+  .vc-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+  .vc-legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 11px; color: var(--text-dim); }
+  .vc-legend i { display: inline-block; width: 16px; vertical-align: middle; margin-right: 5px; }
+  .vc-range { display: inline-flex; gap: 4px; }
+  .vc-range button { background: none; border: 1px solid var(--border); color: var(--text-dim); border-radius: 6px; padding: 3px 9px; font-size: 12px; cursor: pointer; }
+  .vc-range button.active { color: var(--accent); border-color: var(--accent); }
+  .vc-plot { position: relative; height: 220px; margin-left: 58px; background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--radius); }
+  .vc-plot svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .vc-ylab { position: absolute; right: 100%; margin-right: 6px; transform: translateY(-50%); font-size: 11px; color: var(--text-dim); white-space: nowrap; }
+  .vc-tag { position: absolute; top: 3px; transform: translateX(-50%); font-size: 10px; color: var(--text-dim); background: var(--panel-2); padding: 0 4px; border-radius: 4px; }
+  .vc-xaxis { position: relative; height: 16px; margin: 5px 0 0 58px; font-size: 11px; color: var(--text-dim); }
+  .vc-xaxis span { position: absolute; top: 0; white-space: nowrap; }
+  .fc-box { margin-top: 14px; padding: 14px; background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--radius); }
+  .fc-box table { margin-top: 10px; }
+
   /* ---------- Mobile-Optimierung ---------- */
   @media (max-width: 640px) {
     header { padding: 12px 14px; }
@@ -210,6 +226,11 @@
     /* Avatar-Chips (Badges mit Bild) etwas kompakter — !important nötig, da avatarHtml() Inline-Styles setzt */
     .badge img { width: 18px !important; height: 18px !important; }
     .badge { font-size: 10px; padding: 2px 6px; }
+
+    /* Verlaufs-Chart: etwas flacher, schmalere Spalte für die Wert-Beschriftung */
+    .vc-plot { height: 180px; margin-left: 48px; }
+    .vc-xaxis { margin-left: 48px; }
+    .vc-ylab { font-size: 10px; }
   }
 </style>
 </head>
@@ -225,6 +246,7 @@
   <p class="hint">
     Login läuft direkt gegen die inoffizielle Kickbase-API. Zugangsdaten werden nirgendwo gespeichert,
     nur der Session-Token liegt im Browser-Speicher dieser Seite (verschwindet beim Neuladen).
+    Dauerhaft im Browser gemerkt werden nur deine "Unverkäuflich"-Markierungen (Spieler-IDs, keine Zugangsdaten).
   </p>
   <label for="email">E-Mail</label>
   <input type="email" id="email" autocomplete="username" placeholder="deine@email.de">
@@ -486,6 +508,13 @@ function fmtMoney(n) {
 function statusHtml(type, msg) {
   return `<div class="status ${type}">${msg}</div>`;
 }
+// Text sicher in HTML einsetzen. Pflicht für alles, was andere Nutzer frei wählen (Teamnamen, Liganamen,
+// Käufer im Feed): Ein Teamname mit eingebautem HTML/JS würde sonst in deinem Browser ausgeführt und
+// könnte deinen Session-Token abgreifen.
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+const sleep = ms => new Promise(r => setTimeout(r, ms));
 // Einheitliche Spieler-ID-Extraktion (Kickbase nutzt je nach Endpoint unterschiedliche Feldnamen)
 function getPid(p) {
   return p && (p.id || p.i || p.pi || p.playerId);
@@ -512,7 +541,7 @@ function playerImgUrl(p) {
 function avatarHtml(p) {
   const url = playerImgUrl(p);
   if (!url) return '';
-  return `<img src="${url}" onerror="this.style.display='none'" style="width:22px; height:22px; border-radius:50%; object-fit:cover; vertical-align:middle; margin-right:6px; background:var(--panel-2);">`;
+  return `<img src="${esc(url)}" onerror="this.style.display='none'" style="width:22px; height:22px; border-radius:50%; object-fit:cover; vertical-align:middle; margin-right:6px; background:var(--panel-2);">`;
 }
 // Kombinierte Zelle: Bild + Name + Status-Badge, cached den Spieler nebenbei für das Verlauf-Popup
 function playerCell(p) {
@@ -527,6 +556,48 @@ function squadPathAttempts() {
     `/v4/leagues/${CURRENT_LEAGUE}/me/squad`
   ];
 }
+// Marktwert-Verlauf (92 Tage) je Spieler, zentral abgerufen und 10 Minuten gemerkt. Kickbase aktualisiert
+// Marktwerte nur einmal täglich, daher holen Start-Tab, Kader, Markt, Transfers und Popup denselben Verlauf
+// nur noch einmal (vorher wurde jeder Kader-Spieler beim Start doppelt abgerufen: Team-Chart und
+// Halten/Verkaufen). Leere Antworten werden einmal wiederholt und nur 1 Minute gemerkt (sonst fragt jeder
+// Verbraucher erneut doppelt an). HTTP-Fehler werfen wie kbFetch und werden nie gemerkt.
+const HISTORY_DAYS = 92; // 30 Tage lieferte bei Tests öfter leere Antworten von Kickbase, 92 Tage war zuverlässiger
+const HISTORY_TTL_MS = 10 * 60 * 1000;
+const HISTORY_EMPTY_TTL_MS = 60 * 1000;
+const HISTORY_CACHE = new Map(); // "liga:spieler" -> { data, ts, empty }
+
+async function getValueHistory(pid) {
+  const key = CURRENT_LEAGUE + ':' + pid;
+  const hit = HISTORY_CACHE.get(key);
+  if (hit && Date.now() - hit.ts < (hit.empty ? HISTORY_EMPTY_TTL_MS : HISTORY_TTL_MS)) return { data: hit.data, cached: true };
+  const path = `/v4/leagues/${CURRENT_LEAGUE}/players/${pid}/marketvalue/${HISTORY_DAYS}`;
+  let data = await kbFetch(path);
+  if (!(data && Array.isArray(data.it) && data.it.length)) {
+    await sleep(400); // manchmal liefert Kickbase beim ersten Versuch leer, ein zweiter Versuch hilft oft
+    data = await kbFetch(path);
+  }
+  HISTORY_CACHE.set(key, { data, ts: Date.now(), empty: !(data && Array.isArray(data.it) && data.it.length) });
+  return { data, cached: false };
+}
+
+// Echte Kalenderdaten je Verlaufspunkt, falls Kickbase im Feld "dt" Tage seit 1970 liefert (Community-Annahme,
+// daher nur genutzt, wenn plausibel: streng aufsteigend und letzter Punkt höchstens 7 Tage von heute entfernt).
+// Sonst null, dann wird wie bisher ab heute zurückgerechnet.
+function historyDates(points) {
+  if (!Array.isArray(points) || !points.length || !points.every(p => Number.isFinite(p.dt))) return null;
+  if (Math.abs(Date.now() / 86400000 - points[points.length - 1].dt) > 7) return null;
+  for (let i = 1; i < points.length; i++) if (points[i].dt <= points[i - 1].dt) return null;
+  return points.map(p => new Date(p.dt * 86400000 + 12 * 3600000));
+}
+
+// Datum je Verlaufspunkt: echte Daten, falls vorhanden, sonst Annahme "letzter Punkt = heute, davor täglich"
+function seriesDates(count, realDates) {
+  if (realDates && realDates.length === count) return realDates;
+  const today = new Date();
+  today.setHours(12, 0, 0, 0);
+  return Array.from({ length: count }, (_, i) => { const d = new Date(today); d.setDate(d.getDate() - (count - 1 - i)); return d; });
+}
+
 let SESSION_EXPIRED = false;
 
 async function kbFetch(path, { method = 'GET', body = null, authed = true, _retry = 0 } = {}) {
@@ -623,13 +694,10 @@ async function login() {
 }
 
 function logout() {
+  // Seite neu laden statt einzelne Variablen zurückzusetzen: verwirft garantiert alle Daten der Sitzung
+  // (Caches, Tabellen, Charts). Der Token lag ohnehin nur im Arbeitsspeicher.
   TOKEN = null;
-  LEAGUES = [];
-  CURRENT_LEAGUE = null;
-  document.getElementById('app').style.display = 'none';
-  document.getElementById('logoutBtn').style.display = 'none';
-  document.getElementById('loginScreen').style.display = 'block';
-  document.getElementById('password').value = '';
+  location.reload();
 }
 
 // ---------- tabs ----------
@@ -671,7 +739,7 @@ async function loadBudget() {
     const budget = data.b;
     if (budget === undefined) {
       CURRENT_BUDGET = null;
-      box.innerHTML = statusHtml('info', 'Kein "b"-Feld in der Antwort gefunden.') + `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+      box.innerHTML = statusHtml('info', 'Kein "b"-Feld in der Antwort gefunden.') + `<pre>${esc(JSON.stringify(data, null, 2))}</pre>`;
       updateSellDashboardBudget();
       return;
     }
@@ -738,25 +806,24 @@ async function renderTeamValueChartInto(squadPlayers, box, status) {
     box.innerHTML = '<span class="muted">Kader konnte über keinen bekannten Endpunkt geladen werden.</span>';
     return;
   }
-  const days = 92; // 30 Tage lieferte bei Tests öfter leere Antworten von Kickbase, 92 Tage war zuverlässiger
+  const league = CURRENT_LEAGUE;
   const histories = [];
   let failed = 0;
   let firstError = null;
-  for (const p of squadPlayers) {
+  let longestPoints = null; // Verlauf mit den meisten Punkten liefert die Datumsachse
+  for (let idx = 0; idx < squadPlayers.length; idx++) {
+    const p = squadPlayers[idx];
     const pid = getPid(p);
-    if (status) status.innerHTML = `<span class="spinner"></span> Lade Marktwert-Verlauf (${histories.length + failed + 1}/${squadPlayers.length})…`;
+    if (status) status.innerHTML = `<span class="spinner"></span> Lade Marktwert-Verlauf (${idx + 1}/${squadPlayers.length})…`;
     if (!pid) { failed++; if (!firstError) firstError = 'Keine Spieler-ID im Kader-Objekt gefunden (Feldname unbekannt).'; continue; }
+    let fromNetwork = true;
     try {
-      let data = await kbFetch(`/v4/leagues/${CURRENT_LEAGUE}/players/${pid}/marketvalue/${days}`);
-      let points = data.it || [];
-      if (!points.length) {
-        // manchmal liefert Kickbase beim ersten Versuch leer, ein zweiter Versuch hilft oft
-        await new Promise(r => setTimeout(r, 400));
-        data = await kbFetch(`/v4/leagues/${CURRENT_LEAGUE}/players/${pid}/marketvalue/${days}`);
-        points = data.it || [];
-      }
+      const { data, cached } = await getValueHistory(pid);
+      fromNetwork = !cached;
+      const points = (data && data.it) || [];
       if (points.length) {
         histories.push(points.map(pt => pt.mv));
+        if (!longestPoints || points.length > longestPoints.length) longestPoints = points;
       } else if (!firstError) {
         firstError = `Antwort für Spieler-ID ${pid} enthielt auch nach zweitem Versuch keine Verlaufspunkte.`;
       }
@@ -764,39 +831,43 @@ async function renderTeamValueChartInto(squadPlayers, box, status) {
       failed++;
       if (!firstError) firstError = `Fehler bei Spieler-ID ${pid}: ${e.message}`;
     }
-    await new Promise(r => setTimeout(r, 120));
+    if (fromNetwork) await sleep(120); // nur nach echten Requests warten, Cache-Treffer sind sofort da
   }
+  // Während des Ladens andere Liga gewählt oder Ansicht ersetzt (z.B. anderen Manager angeklickt):
+  // nichts zeichnen, sonst landet dieser Verlauf im Chart der neuen Ansicht
+  if (CURRENT_LEAGUE !== league || !box.isConnected) { if (status) status.innerHTML = ''; return; }
   if (!histories.length) {
-    box.innerHTML = statusHtml('info', 'Konnte für keinen Spieler einen Marktwert-Verlauf laden.' + (firstError ? ' Erster Fehler: ' + firstError : ''));
+    box.innerHTML = statusHtml('info', 'Konnte für keinen Spieler einen Marktwert-Verlauf laden.' + (firstError ? ' Erster Fehler: ' + esc(firstError) : ''));
     if (status) status.innerHTML = '';
     return;
   }
-  const len = Math.min(...histories.map(h => h.length));
+  // Spieler mit kürzerer Historie (z.B. erst seit dem Sommer in der Bundesliga) vorne mit ihrem ersten Wert
+  // auffüllen, statt wie bisher den kompletten Team-Verlauf auf die kürzeste Einzelhistorie zu kürzen.
+  const len = Math.max(...histories.map(h => h.length));
+  const paddedCount = histories.filter(h => h.length < len).length;
   const summed = [];
   for (let i = 0; i < len; i++) {
-    summed.push(histories.reduce((sum, h) => sum + h[h.length - len + i], 0));
+    summed.push(histories.reduce((sum, h) => sum + h[Math.max(0, i - (len - h.length))], 0));
   }
-  const min = Math.min(...summed), max = Math.max(...summed);
-  const w = 700, h2 = 220, pad = 30;
-  const pts = summed.map((v, i) => {
-    const x = pad + (i / (summed.length - 1)) * (w - 2 * pad);
-    const y = h2 - pad - ((v - min) / (max - min || 1)) * (h2 - 2 * pad);
-    return `${x},${y}`;
-  }).join(' ');
-  const first = summed[0], last = summed[summed.length - 1];
+  const dates = seriesDates(len, historyDates(longestPoints));
+  const spanDays = Math.round((dates[len - 1] - dates[0]) / 86400000);
+  const first = summed[0], last = summed[len - 1];
   const diff = last - first;
+  const chartId = box.id + 'Plot';
+  const fc = forecastSeries(summed);
+  CHART_DATA[chartId] = { values: summed, dates, fc, range: 30 };
   box.innerHTML = `
     <div class="row" style="margin-bottom:14px; gap:24px;">
       <div><div class="muted" style="font-size:12px;">Team-Marktwert aktuell</div><div style="font-size:18px;">${fmtMoney(last)}</div></div>
-      <div><div class="muted" style="font-size:12px;">vor ${days} Tagen</div><div style="font-size:18px;">${fmtMoney(first)}</div></div>
-      <div><div class="muted" style="font-size:12px;">Veränderung (${days}d)</div>${trendBadge(diff)}</div>
+      <div><div class="muted" style="font-size:12px;">vor ${spanDays} Tagen</div><div style="font-size:18px;">${fmtMoney(first)}</div></div>
+      <div><div class="muted" style="font-size:12px;">Veränderung (${spanDays} Tage)</div>${trendBadge(diff)}</div>
     </div>
-    <svg viewBox="0 0 ${w} ${h2}" style="width:100%; height:auto; background: var(--panel-2); border-radius: var(--radius); border: 1px solid var(--border);">
-      <polyline fill="none" stroke="${diff >= 0 ? '#3ddc84' : '#ff5c5c'}" stroke-width="2" points="${pts}" />
-    </svg>
-    ${chartDateAxis(summed.length)}
+    <div id="${chartId}"></div>
+    ${forecastSummaryHtml(fc, dates[len - 1], false)}
     ${failed ? `<p class="muted" style="font-size:12px; margin-top:8px;">${failed} von ${squadPlayers.length} Spielern konnten nicht geladen werden.</p>` : ''}
+    ${paddedCount ? `<p class="muted" style="font-size:12px; margin-top:8px;">${paddedCount} Spieler mit kürzerer Historie: Tage vor ihrem ersten Datenpunkt sind mit ihrem ersten bekannten Marktwert aufgefüllt.</p>` : ''}
   `;
+  renderValueChart(chartId);
   if (status) status.innerHTML = '';
 }
 
@@ -819,7 +890,7 @@ async function loadTransfers() {
       if (!list.length) {
         box.innerHTML = statusHtml('info', 'Keine Käufe im Feed gefunden (nur andere Aktivitäten wie Markt-Listungen).') +
           `<div style="margin-top:10px;"><a class="link" onclick="toggleTransfersRaw()">Rohdaten anzeigen</a></div>
-           <div id="transfersRawBox" style="display:none; margin-top:10px;"><pre>${JSON.stringify(items.slice(0, 10), null, 2)}</pre></div>`;
+           <div id="transfersRawBox" style="display:none; margin-top:10px;"><pre>${esc(JSON.stringify(items.slice(0, 10), null, 2))}</pre></div>`;
         return;
       }
       // Aktuellen Marktwert je verkauftem Spieler ermitteln: erst aus dem Cache (kostenlos), sonst
@@ -834,20 +905,16 @@ async function loadTransfers() {
           continue;
         }
         box.innerHTML = `<span class="spinner"></span> Lade aktuelle Marktwerte (${i + 1}/${list.length})…`;
+        let fromNetwork = true;
         try {
-          let hist = await kbFetch(`/v4/leagues/${CURRENT_LEAGUE}/players/${pid}/marketvalue/92`);
-          let points = hist.it || [];
-          if (!points.length) {
-            // manchmal liefert Kickbase beim ersten Versuch leer, ein zweiter Versuch hilft oft
-            await new Promise(r => setTimeout(r, 400));
-            hist = await kbFetch(`/v4/leagues/${CURRENT_LEAGUE}/players/${pid}/marketvalue/92`);
-            points = hist.it || [];
-          }
+          const { data, cached } = await getValueHistory(pid);
+          fromNetwork = !cached;
+          const points = (data && data.it) || [];
           d._currentMv = points.length ? points[points.length - 1].mv : null;
         } catch (e) {
           d._currentMv = null;
         }
-        await new Promise(r => setTimeout(r, 120));
+        if (fromNetwork) await sleep(120);
       }
       LAST_TRANSFERS_LIST = list;
       TABLE_SORT['transfers'] = { col: null, dir: 'desc' }; // neue Liste = Sortierung zurücksetzen
@@ -883,7 +950,7 @@ function renderTransfers() {
     const name = d.pn || ((d.fn || '') + ' ' + (d.ln || '')).trim() || d.pi;
     const buyer = d.byr || '–';
     const diff = d._currentMv != null ? d._currentMv - d.trp : null;
-    return `<tr><td>${date}</td><td>${avatarHtml(d)}${name}</td><td>${buyer}</td><td>${fmtMoney(d.trp)}</td><td>${diff != null ? trendBadge(diff) : '<span class="muted">–</span>'}</td></tr>`;
+    return `<tr><td>${date}</td><td>${avatarHtml(d)}${esc(name)}</td><td>${esc(buyer)}</td><td>${fmtMoney(d.trp)}</td><td>${diff != null ? trendBadge(diff) : '<span class="muted">–</span>'}</td></tr>`;
   }).join('');
   box.innerHTML = `<table><thead><tr>
       ${genericSortHeader('transfers', 'Datum', 'date', rerender)}
@@ -893,7 +960,7 @@ function renderTransfers() {
       ${genericSortHeader('transfers', 'Diff. zum MW', 'diff', rerender, false, 'Aktueller Marktwert minus Kaufpreis — sortieren')}
     </tr></thead><tbody>${rows}</tbody></table>
     <div style="margin-top:10px;"><a class="link" onclick="toggleTransfersRaw()">Rohdaten anzeigen</a></div>
-    <div id="transfersRawBox" style="display:none; margin-top:10px;"><pre>${JSON.stringify(LAST_TRANSFERS_LIST, null, 2)}</pre></div>`;
+    <div id="transfersRawBox" style="display:none; margin-top:10px;"><pre>${esc(JSON.stringify(LAST_TRANSFERS_LIST, null, 2))}</pre></div>`;
 }
 
 function toggleTransfersRaw() {
@@ -938,6 +1005,7 @@ function topGainersSortValue(p, col) {
     case 'name': return playerName(p).toLowerCase();
     case 'mv': return p.marketValue ?? p.mv ?? null;
     case 'trend': return p._trendToday;
+    case 'fc': return fcSortValue(p);
     default: return null;
   }
 }
@@ -950,12 +1018,14 @@ function renderTopGainers() {
     <td>${playerCell(p)}</td>
     <td>${fmtMoney(p.marketValue ?? p.mv)}</td>
     <td>${trendBadge(p._trendToday)}</td>
+    <td>${forecastCell(p)}</td>
     <td><a class="link" onclick="jumpToValueHistory('${getPid(p)}')">Verlauf</a></td>
   </tr>`).join('');
   box.innerHTML = `<table><thead><tr>
       ${genericSortHeader('topGainers', 'Spieler', 'name', rerender, true)}
       ${genericSortHeader('topGainers', 'Marktwert', 'mv', rerender)}
       ${genericSortHeader('topGainers', 'Trend (heute)', 'trend', rerender)}
+      ${genericSortHeader('topGainers', 'Prognose 4 Tage', 'fc', rerender, false, 'Erwartete Veränderung in 4 Tagen, sortieren')}
       <th>Verlauf</th>
     </tr></thead><tbody>${rows}</tbody></table>`;
 }
@@ -1014,7 +1084,8 @@ async function loadLeagues() {
       el.dataset.leagueId = id;
       el.style.padding = '10px 0';
       el.style.borderBottom = '1px solid var(--border)';
-      el.innerHTML = `<a class="link" onclick="selectLeague('${id}', '${name.replace(/'/g, "\\'")}')">${name}</a> <span class="badge">${id}</span> <span class="active-marker" style="display:none; color: var(--accent); font-size:12px; margin-left:6px;">● aktiv</span>`;
+      // Liga über die data-league-id des Elternelements wählen: der frei wählbare Liganame landet so nie im Klick-Code
+      el.innerHTML = `<a class="link" onclick="selectLeague(this.parentNode.dataset.leagueId)">${esc(name)}</a> <span class="badge">${esc(id)}</span> <span class="active-marker" style="display:none; color: var(--accent); font-size:12px; margin-left:6px;">● aktiv</span>`;
       list.appendChild(el);
     });
     box.appendChild(list);
@@ -1028,10 +1099,15 @@ async function loadLeagues() {
 // nicht wie erwartet durchläuft — ruft einfach selectLeague() nochmal mit der aktuellen Liga auf.
 async function reloadCurrentLeague() {
   if (!CURRENT_LEAGUE) return;
+  HISTORY_CACHE.clear(); // expliziter Reload = frische Marktwert-Verläufe statt Cache
   await selectLeague(CURRENT_LEAGUE, CURRENT_LEAGUE_NAME);
 }
 
 async function selectLeague(id, name) {
+  if (!name) {
+    const lg = LEAGUES.find(l => String(l.id || l.i) === String(id));
+    name = lg ? (lg.name || lg.n) : null;
+  }
   CURRENT_LEAGUE = id;
   CURRENT_LEAGUE_NAME = name || id;
 
@@ -1044,6 +1120,9 @@ async function selectLeague(id, name) {
   LAST_OWN_SQUAD_PLAYERS = [];
   HOLD_SELL_REQUESTED = false;
   CURRENT_BUDGET = null;
+  for (const key in CHART_DATA) delete CHART_DATA[key]; // Chart-Daten der alten Liga verwerfen
+  loadUntouchables(); // "Unverkäuflich"-Markierungen gelten je Liga
+  renderHoldSell();   // alte Tabelle sofort weg, damit kein Haken der alten Liga unter der neuen gespeichert wird
 
   document.getElementById('currentLeagueBadge').style.display = 'inline';
   document.getElementById('reloadLeagueBtn').style.display = 'inline-block';
@@ -1079,7 +1158,7 @@ async function loadMarket() {
     status.innerHTML = '';
     if (!players.length) {
       box.innerHTML = statusHtml('info', 'Markt geladen, aber keine Spieler in erwarteter Struktur gefunden. Roh-Antwort:') +
-        `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+        `<pre>${esc(JSON.stringify(data, null, 2))}</pre>`;
       return;
     }
     renderMarketTable(players);
@@ -1095,11 +1174,17 @@ function jumpToValueHistory(playerId) {
   openValueModal(playerId);
 }
 
+// Zähler gegen veraltete Antworten: Wird das Popup geschlossen oder für einen anderen Spieler geöffnet,
+// während ein Verlauf noch lädt, darf die späte Antwort den neuen Inhalt nicht überschreiben.
+let VALUE_MODAL_REQ = 0;
+
 function closeValueModal() {
+  VALUE_MODAL_REQ++;
   document.getElementById('valueModalOverlay').style.display = 'none';
 }
 
 async function openValueModal(playerId) {
+  const req = ++VALUE_MODAL_REQ;
   const overlay = document.getElementById('valueModalOverlay');
   const status = document.getElementById('valueModalStatus');
   const content = document.getElementById('valueModalContent');
@@ -1110,47 +1195,37 @@ async function openValueModal(playerId) {
   overlay.style.display = 'flex';
   status.innerHTML = '<span class="spinner"></span> Lade Verlauf…';
   content.innerHTML = '';
-  const days = 92; // zuverlässigster Zeitraum (siehe Erfahrung mit 30 Tagen: öfter leere Antworten)
   try {
-    let data = await kbFetch(`/v4/leagues/${CURRENT_LEAGUE}/players/${playerId}/marketvalue/${days}`);
-    let points = data.it || [];
-    if (!points.length) {
-      status.innerHTML = '<span class="spinner"></span> Leere Antwort, versuche erneut…';
-      await new Promise(r => setTimeout(r, 600));
-      data = await kbFetch(`/v4/leagues/${CURRENT_LEAGUE}/players/${playerId}/marketvalue/${days}`);
-      points = data.it || [];
-    }
+    const { data } = await getValueHistory(playerId);
+    if (req !== VALUE_MODAL_REQ) return;
+    const points = (data && data.it) || [];
     status.innerHTML = '';
     if (!points.length) {
-      content.innerHTML = statusHtml('info', `Kickbase liefert für diesen Spieler gerade keine Verlaufsdaten (${days} Tage).`) + `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+      content.innerHTML = statusHtml('info', `Kickbase liefert für diesen Spieler gerade keine Verlaufsdaten (${HISTORY_DAYS} Tage).`) + `<pre>${esc(JSON.stringify(data, null, 2))}</pre>`;
       return;
     }
     const values = points.map(p => p.mv);
-    const min = Math.min(...values), max = Math.max(...values);
-    const w = 700, h = 220, pad = 30;
-    const pts = points.map((p, i) => {
-      const x = pad + (i / (points.length - 1)) * (w - 2 * pad);
-      const y = h - pad - ((p.mv - min) / (max - min || 1)) * (h - 2 * pad);
-      return `${x},${y}`;
-    }).join(' ');
-    const first = points[0].mv, last = points[points.length - 1].mv;
+    const dates = seriesDates(values.length, historyDates(points));
+    const fc = forecastSeries(values);
+    const first = values[0], last = values[values.length - 1];
     const diff = last - first;
     const diffClass = diff > 0 ? 'trend-up' : diff < 0 ? 'trend-down' : 'muted';
-
+    const spanDays = Math.round((dates[dates.length - 1] - dates[0]) / 86400000);
+    CHART_DATA.valueModalChart = { values, dates, fc, range: 30 };
     content.innerHTML = `
       <div class="row" style="margin-bottom:14px; gap:24px;">
         <div><div class="muted" style="font-size:12px;">Aktuell</div><div style="font-size:18px;">${fmtMoney(last)}</div></div>
-        <div><div class="muted" style="font-size:12px;">Höchststand (${days}d)</div><div style="font-size:18px;">${fmtMoney(data.hmv ?? max)}</div></div>
-        <div><div class="muted" style="font-size:12px;">Veränderung</div><div class="${diffClass}" style="font-size:18px;">${diff >= 0 ? '+' : ''}${fmtMoney(diff)}</div></div>
+        <div><div class="muted" style="font-size:12px;">Höchststand (${HISTORY_DAYS}d)</div><div style="font-size:18px;">${fmtMoney(data.hmv ?? Math.max(...values))}</div></div>
+        <div><div class="muted" style="font-size:12px;">Veränderung (${spanDays} Tage)</div><div class="${diffClass}" style="font-size:18px;">${diff >= 0 ? '+' : ''}${fmtMoney(diff)}</div></div>
       </div>
-      <svg viewBox="0 0 ${w} ${h}" style="width:100%; height:auto; background: var(--panel-2); border-radius: var(--radius); border: 1px solid var(--border);">
-        <polyline fill="none" stroke="${diff >= 0 ? '#3ddc84' : '#ff5c5c'}" stroke-width="2" points="${pts}" />
-      </svg>
-      ${chartDateAxis(points.length)}
+      <div id="valueModalChart"></div>
+      ${forecastSummaryHtml(fc, dates[dates.length - 1], true)}
     `;
+    renderValueChart('valueModalChart');
   } catch (e) {
+    if (req !== VALUE_MODAL_REQ) return;
     console.error(e);
-    status.innerHTML = statusHtml('err', 'Fehler beim Laden des Verlaufs: ' + e.message);
+    status.innerHTML = statusHtml('err', 'Fehler beim Laden des Verlaufs: ' + esc(e.message));
   }
 }
 
@@ -1219,7 +1294,10 @@ function getMarketSortValue(p, col) {
     case 'mv': return p.marketValue ?? p.mv ?? null;
     case 'trendToday': return p._trendToday;
     case 'trend7': return p._trend7;
+    case 'fc': return fcSortValue(p);
     case 'price': return p.price ?? p.prc ?? null;
+    case 'totalPoints': return totalPoints(p);
+    case 'avgPoints': return avgPoints(p);
     default: return null;
   }
 }
@@ -1247,10 +1325,11 @@ function sortHeader(label, col) {
   return `<th style="cursor:pointer; user-select:none;" onclick="sortMarketBy('${col}')" title="Sortieren">${label}${arrow}</th>`;
 }
 
-// Realistischer Angebots-Betrag: Marktwert plus ein kleiner Aufschlag, falls der Spieler gerade im
-// Aufwind ist (Annahme: bis der Transfer abgeschlossen ist, vergehen ein paar Tage, in denen der
-// Marktwert bei positivem Trend vermutlich weiter steigt). Bei fallendem/neutralem Trend kein Aufschlag,
-// da der Marktwert selbst schon der realistische Preis ist. Grobe Heuristik, kein exakter Marktpreis.
+// Realistischer Angebots-Betrag: Marktwert + 5 % Wettbewerbsaufschlag + erwarteter Anstieg der nächsten
+// 4 Tage laut Prognose (nur wenn die Prognose steigt). Ersetzt die frühere Hochrechnung "heutiger
+// Tagestrend x 5 Tage", die einzelne Ausreißer-Tage voll fortgeschrieben und abflachende Anstiege
+// überschätzt hat. Ohne Prognose (zu kurze Historie) greift die alte Hochrechnung als Rückfallebene.
+// Grobe Heuristik, kein exakter Marktpreis.
 function recommendedOffer(p) {
   const mv = p.marketValue ?? p.mv;
   if (mv == null) return null;
@@ -1259,6 +1338,13 @@ function recommendedOffer(p) {
   // Grundpuffer: echte Ligen haben oft mehr Nachfrage/Konkurrenz als der reine Marktwert-Trend zeigt,
   // deshalb zusätzlich ein pauschaler Wettbewerbsaufschlag von 5% auf den Marktwert.
   const competitionPremium = mv * 0.05;
+  const fc = getForecast(p);
+  if (fc) {
+    if (fc.change > 0) {
+      return { amount: mv + fc.change + competitionPremium, basis: `Marktwert + erwarteter Anstieg in 4 Tagen laut Prognose (${fmtMoney(fc.change)}) + 5 % Wettbewerbsaufschlag` };
+    }
+    return { amount: mv + competitionPremium, basis: `Prognose ${fc.direction === 'down' ? 'fallend' : 'seitwärts'}: kein Trendaufschlag, nur Marktwert + 5 % Wettbewerbsaufschlag` };
+  }
   if (t1 == null && t7 == null) {
     return { amount: mv + competitionPremium, basis: 'kein Trend bekannt, Marktwert + 5% Wettbewerbsaufschlag' };
   }
@@ -1269,7 +1355,7 @@ function recommendedOffer(p) {
   const trendBuffer = dailyRate * 5; // ca. 5 Tage Vorlauf bis der Transfer vermutlich abgeschlossen ist
   return {
     amount: mv + trendBuffer + competitionPremium,
-    basis: `Marktwert + ca. 5 Tage erwarteter Anstieg (${fmtMoney(dailyRate)}/Tag) + 5% Wettbewerbsaufschlag`
+    basis: `Keine Prognose möglich (kurze Historie): Marktwert + ca. 5 Tage heutiger Anstieg (${fmtMoney(dailyRate)}/Tag) + 5% Wettbewerbsaufschlag`
   };
 }
 
@@ -1289,23 +1375,28 @@ function renderMarketTable(players) {
       <td>${fmtMoney(mv)}</td>
       <td>${pending ? '<span class="spinner"></span>' : trendBadge(p._trendToday)}</td>
       <td>${pending ? '<span class="spinner"></span>' : trendBadge(p._trend7)}</td>
+      <td>${pending ? '<span class="spinner"></span>' : forecastCell(p)}</td>
       <td>${price ? fmtMoney(price) : '<span class="muted">–</span>'}</td>
-      <td>${pending ? '<span class="spinner"></span>' : (reco ? `<span title="${reco.basis}">${fmtMoney(reco.amount)}</span>` : '<span class="muted">–</span>')}</td>
+      <td>${pending ? '<span class="spinner"></span>' : (reco ? `<span title="${esc(reco.basis)}">${fmtMoney(reco.amount)}</span>` : '<span class="muted">–</span>')}</td>
+      <td>${totalPoints(p) ?? '<span class="muted">–</span>'}</td>
+      <td>${avgPoints(p) ?? '<span class="muted">–</span>'}</td>
       <td><a class="link" onclick="jumpToValueHistory('${getPid(p)}')">Verlauf</a></td>
     </tr>`;
   }).join('');
   box.innerHTML = `<table>
-    <thead><tr>${sortHeader('Spieler', 'name')}${sortHeader('Marktwert', 'mv')}${sortHeader('Trend (heute)', 'trendToday')}${sortHeader('Trend (7 Tage)', 'trend7')}${sortHeader('Angebotspreis', 'price')}<th title="Grobe Schätzung: Marktwert + Aufschlag bei positivem Trend">Kaufempfehlung</th><th>Verlauf</th></tr></thead>
+    <thead><tr>${sortHeader('Spieler', 'name')}${sortHeader('Marktwert', 'mv')}${sortHeader('Trend (heute)', 'trendToday')}${sortHeader('Trend (7 Tage)', 'trend7')}${sortHeader('Prognose 4 Tage', 'fc')}${sortHeader('Angebotspreis', 'price')}<th title="Grobe Schätzung: Marktwert + erwarteter Anstieg der nächsten 4 Tage + 5 % Wettbewerbsaufschlag">Kaufempfehlung</th>${sortHeader('Gesamtpunkte', 'totalPoints')}${sortHeader('Ø Punkte', 'avgPoints')}<th>Verlauf</th></tr></thead>
     <tbody>${rows}</tbody>
   </table>
-  <p class="muted" style="font-size:12px; margin-top:8px;">"Kaufempfehlung" ist ein grob geschätzter, realistischer Angebotsbetrag (Marktwert + Aufschlag bei steigendem Trend, ca. 3 Tage vorausgerechnet), keine Garantie — Mauszeiger über den Betrag zeigt die Berechnungsgrundlage.</p>
+  <p class="muted" style="font-size:12px; margin-top:8px;">"Prognose 4 Tage": erwartete Marktwert-Veränderung laut Momentum-Modell. Fett = der ganze Zielkorridor (80 %) liegt über bzw. unter dem heutigen Wert, also ein klares Signal. Details per Mauszeiger oder über "Verlauf".</p>
+  <p class="muted" style="font-size:12px; margin-top:4px;">"Kaufempfehlung" ist ein grob geschätzter Angebotsbetrag: Marktwert + erwarteter Anstieg der nächsten 4 Tage laut Prognose (nur bei steigender Prognose) + 5 % Wettbewerbsaufschlag. Keine Garantie, Mauszeiger über den Betrag zeigt die Berechnungsgrundlage.</p>
   <div style="margin-top:10px;"><a class="link" onclick="toggleMarketRaw()">Rohdaten anzeigen (ein Spieler)</a></div>
-  <div id="marketRawBox" style="display:none; margin-top:10px;"><pre>${JSON.stringify(players[0], null, 2)}</pre></div>`;
+  <div id="marketRawBox" style="display:none; margin-top:10px;"><pre>${esc(JSON.stringify(players[0], null, 2))}</pre></div>`;
 }
 
 // Berechnet Trend (heute) und 7-Tage-Trend für Marktspieler über den Marktwert-Verlauf,
-// da Markt-Objekte selbst keine tfhmvt/sdmvt-Felder liefern. Ein Zusatz-Request pro NOCH NICHT
-// berechnetem Spieler — bereits berechnete (z.B. beim vorherigen Aufruf) werden übersprungen.
+// da Markt-Objekte selbst keine tfhmvt/sdmvt-Felder liefern. Bereits berechnete Spieler werden
+// übersprungen. Verläufe kommen aus dem gemeinsamen Cache (getValueHistory), daher kostet z.B. der
+// Kader nach dem Team-Chart keinen zweiten Request. p._history ist zugleich die Basis der Prognose.
 // 92 statt vorher 8 Tage: das kurze Fenster lieferte zu Saisonbeginn oft zu wenige Punkte für eine
 // belastbare Berechnung (durchgehend leere Ergebnisse).
 async function computeMarketTrends(players, statusEl, onProgress) {
@@ -1314,11 +1405,14 @@ async function computeMarketTrends(players, statusEl, onProgress) {
     const p = pending[idx];
     const pid = getPid(p);
     if (statusEl) statusEl.innerHTML = `<span class="spinner"></span> Berechne Trends (${idx + 1}/${pending.length})…`;
+    p._fc = undefined; // Prognose wird aus dem neuen Verlauf neu berechnet
+    let fromNetwork = false;
     if (!pid) { p._trendToday = null; p._trend7 = null; p._history = null; }
     else {
       try {
-        const data = await kbFetch(`/v4/leagues/${CURRENT_LEAGUE}/players/${pid}/marketvalue/92`);
-        const points = data.it || [];
+        const { data, cached } = await getValueHistory(pid);
+        fromNetwork = !cached;
+        const points = (data && data.it) || [];
         if (points.length >= 2) {
           const idx7 = Math.max(0, points.length - 1 - 7);
           p._trendToday = points[points.length - 1].mv - points[points.length - 2].mv;
@@ -1330,13 +1424,14 @@ async function computeMarketTrends(players, statusEl, onProgress) {
           p._history = null;
         }
       } catch (e) {
+        fromNetwork = true;
         p._trendToday = null;
         p._trend7 = null;
         p._history = null;
       }
     }
     if (onProgress) onProgress(); // sofort sichtbares Update statt erst am Ende (fühlte sich vorher wie "hängengeblieben" an)
-    if (idx < pending.length - 1) await new Promise(r => setTimeout(r, 120));
+    if (fromNetwork && idx < pending.length - 1) await sleep(120); // Cache-Treffer brauchen keine Pause
   }
   if (statusEl) statusEl.innerHTML = '';
 }
@@ -1354,6 +1449,7 @@ function squadSortValue(p, col) {
     case 'mv': return mv ?? null;
     case 'profit': return profit;
     case 'trend': return trendVal(p);
+    case 'fc': return fcSortValue(p);
     case 'points': return p.totalPoints ?? p.tp ?? p.points ?? null;
     default: return null;
   }
@@ -1375,6 +1471,7 @@ function renderSquadTable(players, rawData) {
       <td>${fmtMoney(mv)}</td>
       <td class="${profitClass}">${profit != null ? (profit >= 0 ? '+' : '') + fmtMoney(profit) : '<span class="muted">–</span>'}</td>
       <td>${trendBadge(trendVal(p))}</td>
+      <td>${forecastCell(p)}</td>
       <td>${points ?? '–'}</td>
       <td><a class="link" onclick="jumpToValueHistory('${getPid(p)}')">Verlauf</a></td>
     </tr>`;
@@ -1385,10 +1482,11 @@ function renderSquadTable(players, rawData) {
       ${genericSortHeader('squad', 'Marktwert', 'mv', rerender)}
       ${genericSortHeader('squad', 'Profit/Verlust', 'profit', rerender)}
       ${genericSortHeader('squad', 'Trend', 'trend', rerender)}
+      ${genericSortHeader('squad', 'Prognose 4 Tage', 'fc', rerender, false, 'Erwartete Veränderung in 4 Tagen, erscheint nach dem Laden der Verläufe (Start-Tab bzw. Verkauf-Tab), sortieren')}
       ${genericSortHeader('squad', 'Punkte', 'points', rerender)}
       <th>Verlauf</th>
     </tr></thead><tbody>${rows}</tbody></table>
-    <div id="squadRawBox" style="display:none; margin-top:14px;"><pre>${JSON.stringify(rawData, null, 2)}</pre></div>`;
+    <div id="squadRawBox" style="display:none; margin-top:14px;"><pre>${esc(JSON.stringify(rawData, null, 2))}</pre></div>`;
 }
 
 // Halten/Verkaufen-Liste für den Start-Tab
@@ -1397,6 +1495,7 @@ function holdSellSortValue(p, col) {
     case 'name': return playerName(p).toLowerCase();
     case 'mv': return p.marketValue ?? p.mv ?? null;
     case 'today': return p._trendToday;
+    case 'fc': return fcSortValue(p);
     case 'total': return profitVal(p);
     case 'reco': {
       const reco = holdSellRecommendation(p);
@@ -1429,14 +1528,16 @@ function renderHoldSell() {
       cell = '<span class="spinner"></span>';
     } else {
       const reco = holdSellRecommendation(p);
-      cell = reco ? `<span class="${reco.cls}" title="${reco.reason}">${reco.label}</span>` : '<span class="muted">zu wenig Daten</span>';
+      cell = reco ? `<span class="${reco.cls}" title="${reco.reason}">${reco.label}</span>${untouchable ? '' : fcConflictMark(reco, getForecast(p))}` : '<span class="muted">zu wenig Daten</span>';
     }
     const todayCell = p._trendToday === undefined ? '<span class="spinner"></span>' : trendBadge(p._trendToday);
+    const fcCell = p._trendToday === undefined ? '<span class="spinner"></span>' : forecastCell(p);
     return `<tr>
       <td>${playerCell(p)}</td>
       <td style="text-align:center;"><input type="checkbox" ${untouchable ? 'checked' : ''} onchange="toggleUntouchable('${pid}')" title="Als unverkäuflich markieren"></td>
       <td>${fmtMoney(p.marketValue ?? p.mv)}</td>
       <td>${todayCell}</td>
+      <td>${fcCell}</td>
       <td>${trendBadge(profitVal(p))}</td>
       <td>${cell}</td>
     </tr>`;
@@ -1446,10 +1547,12 @@ function renderHoldSell() {
       <th>Unverkäuflich</th>
       ${genericSortHeader('holdSell', 'Marktwert', 'mv', rerender)}
       ${genericSortHeader('holdSell', 'Tages-Entwicklung', 'today', rerender)}
+      ${genericSortHeader('holdSell', 'Prognose 4 Tage', 'fc', rerender, false, 'Erwartete Veränderung in 4 Tagen, sortieren')}
       ${genericSortHeader('holdSell', 'Gesamt Gewinn/Verlust', 'total', rerender)}
       ${genericSortHeader('holdSell', 'Empfehlung', 'reco', rerender, true)}
     </tr></thead><tbody>${rows}</tbody></table>
-    <p class="muted" style="font-size:12px; margin-top:8px;">Einfache Momentum-Regel auf Basis der letzten Tage (3-Tage- vs. 7-Tage-Schnitt), keine Anlage- oder Spielberatung im eigentlichen Sinn. Mit Haken bei "Unverkäuflich" wird für den Spieler immer "Halten" angezeigt, unabhängig vom Trend.</p>`;
+    <p class="muted" style="font-size:12px; margin-top:8px;">Einfache Momentum-Regel auf Basis der letzten Tage (3-Tage- vs. 7-Tage-Schnitt), keine Anlage- oder Spielberatung im eigentlichen Sinn. Mit Haken bei "Unverkäuflich" wird für den Spieler immer "Halten" angezeigt, unabhängig vom Trend. Die Haken werden je Liga im Browser gemerkt.</p>
+    <p class="muted" style="font-size:12px; margin-top:4px;">⚠ = die 4-Tage-Prognose zeigt klar in die Gegenrichtung der Empfehlung (Details per Mauszeiger). In dem Fall lohnt ein Blick in den Verlauf.</p>`;
 
   // Zusammenfassungs-Badges im Verkauf-Dashboard-Kopf
   const summaryEl = document.getElementById('sellDashboardSummary');
@@ -1478,6 +1581,9 @@ async function loadHoldSellRecommendations() {
   HOLD_SELL_REQUESTED = true;
   renderHoldSell();
   await computeMarketTrends(players, null, () => renderHoldSell());
+  // Kader-Tabelle bekommt ihre Prognose-Spalte, sobald die Verläufe da sind (nur wenn inzwischen
+  // nicht schon eine andere Liga bzw. ein neu geladener Kader angezeigt wird)
+  if (LAST_SQUAD_PLAYERS_FOR_RENDER === players) renderSquadTable(players, LAST_SQUAD_RAW);
 }
 
 // Automatischer Verkaufsrechner: 5 Strategien, um mit möglichst wenig "Schaden" wieder auf einen
@@ -1518,6 +1624,12 @@ function computeAutoSellScenarios() {
   if (!sellable.length) {
     box.innerHTML = '<span class="muted">Keine verkäuflichen Spieler übrig — sind alle als unverkäuflich markiert?</span>';
     return;
+  }
+
+  // Erwartete Marktwert-Bewegung für "Trend nutzen": 4-Tage-Prognose, ohne Verlauf der heutige Trend
+  function expectedMove(p) {
+    const fc = getForecast(p);
+    return fc ? fc.change : (trendVal(p) ?? 0);
   }
 
   // Statt fixer Mindestzahlen je Position (die sich gegenseitig ausschließen können, z.B. reichen
@@ -1664,8 +1776,8 @@ function computeAutoSellScenarios() {
     },
     {
       title: 'Trend nutzen',
-      desc: 'Verkauft zuerst Spieler, deren Marktwert gerade am stärksten fällt (Verluste begrenzen), lässt steigende Spieler in Ruhe.',
-      result: buildScenario((a, b) => (trendVal(a) ?? 0) - (trendVal(b) ?? 0))
+      desc: 'Verkauft zuerst Spieler mit der schwächsten 4-Tage-Prognose (Verluste begrenzen), lässt steigende Spieler in Ruhe. Bei gleicher Prognose (z.B. seitwärts) oder ohne Prognose entscheidet der heutige Trend.',
+      result: buildScenario((a, b) => (expectedMove(a) - expectedMove(b)) || ((trendVal(a) ?? 0) - (trendVal(b) ?? 0)))
     },
     {
       title: 'Gewinn realisieren',
@@ -1773,7 +1885,7 @@ async function loadSquad() {
       status.innerHTML = statusHtml('ok', `Geladen über <code>${path}</code> — falls Kaufpreis/Profit unten falsch oder leer wirkt: <a class="link" onclick="toggleSquadRaw()">Rohdaten anzeigen</a> und mir die tatsächlichen Feldnamen schicken.`);
       const players = data.players || data.it || data.pl || [];
       if (!players.length) {
-        box.innerHTML = `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+        box.innerHTML = `<pre>${esc(JSON.stringify(data, null, 2))}</pre>`;
         return;
       }
       LAST_SQUAD_PLAYERS_FOR_RENDER = players;
@@ -2036,22 +2148,301 @@ function trendBadge(val) {
   return `<span class="${cls}">${sign} ${fmtMoney(Math.abs(val))}</span>`;
 }
 
-// Baut eine Zeile mit 5 Datums-Labels unter einem Verlaufs-Chart. Nimmt an, dass der letzte Punkt
-// "heute" ist und die Punkte davor täglich zurückreichen (Kickbase liefert kein zuverlässiges
-// Datumsfeld pro Punkt, das ist daher eine Annäherung, keine exakte Kalender-Zuordnung).
-function chartDateAxis(pointCount) {
-  if (pointCount < 2) return '';
-  const today = new Date();
-  const fracs = [0, 0.25, 0.5, 0.75, 1];
-  const labels = fracs.map(f => {
-    const idx = Math.round(f * (pointCount - 1));
-    const d = new Date(today);
-    d.setDate(d.getDate() - (pointCount - 1 - idx));
-    return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
-  });
-  return `<div class="row muted" style="justify-content: space-between; margin-top:6px; font-size:11px;">
-    ${labels.map(l => `<span>${l}</span>`).join('')}
+// ---------- Marktwert-Prognose (4 Tage) ----------
+// Gedämpftes Momentum: Die geglättete Tagesveränderung (in %) wird fortgeschrieben und flacht pro Tag
+// um den Faktor phi ab (Anstiege und Abstiege laufen in Kickbase meist ein paar Tage weiter und werden
+// dann schwächer). phi wird je Spieler per Rückrechnung gewählt: Für jeden der letzten bis zu 45 Tage
+// wird so getan, als wäre dieser Tag "heute", prognostiziert und mit dem echten Verlauf verglichen.
+// Schlägt kein Momentum-Modell "bleibt gleich" um mindestens 5 %, lautet die Prognose seitwärts.
+// Zielkorridor: 5 %/95 %-Quantile der Rückrechnungsfehler (Fehler auf bekannten Tagen unterschätzen die
+// echte Streuung, in Simulationen landen so ca. 80 % der echten Werte im Korridor), mindestens aber die
+// Schwankung der letzten 7 Tage (fängt Ausbrüche nach langer Flaute ab). Nutzt nur den ohnehin geladenen
+// Marktwert-Verlauf, keine Zusatzdaten und keine Zusatz-Requests.
+const FC_HORIZON = 4;                  // Prognose-Tage
+const FC_ALPHA = 0.5;                  // Glättung der Tagesveränderungen (höher = reagiert schneller)
+const FC_PHIS = [0, 0.5, 0.8, 0.95];   // Dämpfung: 0 = "bleibt gleich", 0.95 = Trend hält fast unverändert an
+const FC_CAL_WINDOW = 45;              // so viele jüngste Tage fließen in die Rückrechnung ein
+const FC_MIN_POINTS = 8;               // darunter keine Prognose
+const FC_MIN_CAL = 12;                 // so viele Rückrechnungen braucht ein kalibrierter Korridor mindestens
+const FC_FLAT = 0.003;                 // unter 0,3 % Veränderung gilt als seitwärts
+const FC_Z80 = 1.2816;                 // Normalverteilungs-Quantil für Ersatz-Korridor und Untergrenze
+
+function fcQuantile(sorted, q) {
+  if (!sorted.length) return 0;
+  const pos = (sorted.length - 1) * q;
+  const lo = Math.floor(pos), hi = Math.ceil(pos);
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
+}
+
+function forecastSeries(rawValues) {
+  if (!Array.isArray(rawValues)) return null;
+  // nur den zusammenhängenden gültigen Teil am Ende nutzen (Marktwerte müssen > 0 sein)
+  let start = rawValues.length;
+  while (start > 0 && typeof rawValues[start - 1] === 'number' && rawValues[start - 1] > 0) start--;
+  const v = rawValues.slice(start);
+  const n = v.length;
+  if (n < FC_MIN_POINTS) return null;
+
+  const lv = v.map(Math.log);
+  const r = [0];
+  for (let i = 1; i < n; i++) r.push(lv[i] - lv[i - 1]);
+  const s = new Array(n).fill(0); // s[t] = geglättete Tagesveränderung bis einschließlich Tag t
+  s[1] = r[1];
+  for (let i = 2; i < n; i++) s[i] = FC_ALPHA * r[i] + (1 - FC_ALPHA) * s[i - 1];
+  // cum[k][h] = Summe der gedämpften Faktoren phi^1..phi^h für FC_PHIS[k]
+  const cum = FC_PHIS.map(phi => { const c = [0]; let p = 1; for (let h = 1; h <= FC_HORIZON; h++) { p *= phi; c.push(c[h - 1] + p); } return c; });
+
+  // Mittlerer absoluter Fehler je Dämpfung über die Prognosetage tFrom..tTo, nur mit bis "known" bekannten Werten
+  const maeFor = (k, tFrom, tTo, known) => {
+    let sum = 0, c = 0;
+    for (let t = tFrom; t <= tTo; t++) {
+      for (let h = 1; h <= FC_HORIZON && t + h <= known; h++) { sum += Math.abs(lv[t + h] - lv[t] - s[t] * cum[k][h]); c++; }
+    }
+    return c ? sum / c : Infinity;
+  };
+  // Momentum nur, wenn es "bleibt gleich" (k = 0) um mindestens 5 % schlägt
+  const pickPhi = (tFrom, tTo, known) => {
+    const naiveMae = maeFor(0, tFrom, tTo, known);
+    let pick = 0, bestMae = naiveMae;
+    for (let k = 1; k < FC_PHIS.length; k++) {
+      const mae = maeFor(k, tFrom, tTo, known);
+      if (mae < naiveMae * 0.95 && mae < bestMae) { pick = k; bestMae = mae; }
+    }
+    return pick;
+  };
+
+  const tStart = Math.max(4, n - 1 - FC_CAL_WINDOW);
+  const k = pickPhi(tStart, n - 2, n - 1);
+  const errs = Array.from({ length: FC_HORIZON }, () => []);
+  for (let t = tStart; t <= n - 2; t++) {
+    for (let h = 1; h <= FC_HORIZON && t + h < n; h++) errs[h - 1].push(lv[t + h] - lv[t] - s[t] * cum[k][h]);
+  }
+
+  // Ehrliche Trefferquote (walk-forward): An jedem vergangenen Tag T wird die Dämpfung nur mit den bis T
+  // bekannten Daten gewählt und dann die Richtung für T+4 vorhergesagt. Misst, was du damals gesehen
+  // hättest, statt vom Nachhinein-Wissen der Auswahl zu profitieren (das wäre zu optimistisch).
+  let calls = 0, hits = 0;
+  for (let T = tStart + 8; T + FC_HORIZON < n; T++) {
+    const kT = pickPhi(Math.max(4, T - 1 - FC_CAL_WINDOW), T - 1, T);
+    const pred = s[T] * cum[kT][FC_HORIZON];
+    if (kT > 0 && Math.abs(pred) >= FC_FLAT) {
+      calls++;
+      if (pred * (lv[T + FC_HORIZON] - lv[T]) > 0) hits++;
+    }
+  }
+
+  const last = v[n - 1];
+  const sNow = s[n - 1];
+  const calibrated = errs[FC_HORIZON - 1].length >= FC_MIN_CAL;
+  const rms = arr => Math.sqrt(arr.reduce((a, b) => a + b * b, 0) / Math.max(1, arr.length));
+  const recent7 = rms(r.slice(Math.max(1, n - 7)));
+  let sigma = 0; // Ersatz-Streuung bei kurzer Historie: Schwankung der letzten bis zu 30 Tagesveränderungen
+  if (!calibrated) {
+    const recent = r.slice(Math.max(1, n - 30));
+    const mean = recent.reduce((a, b) => a + b, 0) / recent.length;
+    sigma = Math.sqrt(recent.reduce((a, b) => a + (b - mean) ** 2, 0) / Math.max(1, recent.length - 1));
+  }
+  const points = [];
+  let lo = 0, hi = 0;
+  for (let h = 1; h <= FC_HORIZON; h++) {
+    const center = sNow * cum[k][h];
+    let qlo, qhi;
+    if (calibrated) {
+      const sorted = [...errs[h - 1]].sort((a, b) => a - b);
+      qlo = fcQuantile(sorted, 0.05);
+      qhi = fcQuantile(sorted, 0.95);
+    } else {
+      qhi = FC_Z80 * sigma * Math.sqrt(h);
+      qlo = -qhi;
+    }
+    const floor = FC_Z80 * recent7 * Math.sqrt(h);
+    // Korridor: mindestens so breit wie die jüngste Schwankung, nie schmaler als am Vortag, enthält die Prognose
+    lo = Math.min(lo, qlo, -floor);
+    hi = Math.max(hi, qhi, floor);
+    points.push({ h, mv: last * Math.exp(center), lo: last * Math.exp(center + lo), hi: last * Math.exp(center + hi) });
+  }
+  const end = points[FC_HORIZON - 1];
+  const rel = end.mv / last - 1;
+  const direction = rel > FC_FLAT ? 'up' : rel < -FC_FLAT ? 'down' : 'flat';
+  return {
+    last, points, rel,
+    change: end.mv - last,
+    lo: end.lo,
+    hi: end.hi,
+    direction,
+    // "klar" nur mit kalibriertem Korridor: bei sehr kurzer Historie ist der Korridor bloß geschätzt
+    clear: calibrated && ((direction === 'up' && end.lo > last) || (direction === 'down' && end.hi < last)),
+    phi: FC_PHIS[k],
+    calibrated,
+    hitRate: calls >= 8 ? hits / calls : null,
+    calls
+  };
+}
+// ---------- Ende Prognose ----------
+
+// ---------- Prognose-Anzeige ----------
+// Prognose eines Spielers aus dem bereits geladenen Verlauf (p._history), einmal berechnet und am Objekt gemerkt
+function getForecast(p) {
+  if (!p || !Array.isArray(p._history)) return null;
+  if (p._fc === undefined) p._fc = forecastSeries(p._history);
+  return p._fc;
+}
+function fcSortValue(p) {
+  const fc = getForecast(p);
+  return fc ? fc.change : null;
+}
+function fcLabel(fc) {
+  if (fc.direction === 'up') return { text: fc.clear ? '▲ steigend' : '▲ eher steigend', cls: 'trend-up' };
+  if (fc.direction === 'down') return { text: fc.clear ? '▼ fallend' : '▼ eher fallend', cls: 'trend-down' };
+  return { text: '► seitwärts', cls: 'muted' };
+}
+function fmtPct(x) {
+  return (x > 0 ? '+' : '') + (x * 100).toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' %';
+}
+function fcHitText(fc) {
+  return fc.hitRate != null
+    ? `Richtung lag in der Rückrechnung in ${Math.round(fc.hitRate * 100)} % von ${fc.calls} Fällen richtig (50 % entspricht Zufall).`
+    : 'Noch zu wenige vergangene Richtungsprognosen für eine Trefferquote.';
+}
+function fcTooltip(fc) {
+  return `Prognose in ${FC_HORIZON} Tagen: ${fmtMoney(fc.points[FC_HORIZON - 1].mv)} (${fmtPct(fc.rel)}). Zielkorridor 80 %: ${fmtMoney(fc.lo)} bis ${fmtMoney(fc.hi)}. ${fcHitText(fc)}`;
+}
+// Tabellenzelle "Prognose 4 Tage": erwartete Veränderung, fett bei klarem Signal, Details im Tooltip
+function forecastCell(p) {
+  const fc = getForecast(p);
+  if (!fc) {
+    const why = !p || p._trendToday === undefined ? 'Verlauf noch nicht geladen'
+      : Array.isArray(p._history) ? 'Zu kurze Historie für eine Prognose' : 'Kein Verlauf verfügbar';
+    return `<span class="muted" title="${why}">–</span>`;
+  }
+  const lab = fcLabel(fc);
+  const body = fc.direction === 'flat'
+    ? lab.text
+    : `${fc.change > 0 ? '▲' : '▼'} ${compactMoney(Math.abs(fc.change))} € <span style="font-size:11px; opacity:0.8;">${fmtPct(fc.rel)}</span>`;
+  // gerundet (Tsd/Mio): eine Prognose auf den Euro genau wäre Scheingenauigkeit, exakte Werte im Tooltip
+  return `<span class="${lab.cls}" style="white-space:nowrap; cursor:help;${fc.clear ? ' font-weight:600;' : ''}" title="${esc(fcTooltip(fc))}">${body}</span>`;
+}
+// Markiert Widersprüche zwischen Momentum-Regel (Halten/Verkaufen) und einem klaren Prognose-Signal
+function fcConflictMark(reco, fc) {
+  if (!reco || !fc || !fc.clear) return '';
+  const conflict = (reco.label === 'Halten' && fc.direction === 'down') || (reco.label === 'Verkaufen' && fc.direction === 'up');
+  if (!conflict) return '';
+  const where = fc.direction === 'up' ? 'über' : 'unter';
+  return ` <span style="color: var(--accent-2); cursor:help;" title="Widerspruch: Der ganze Zielkorridor der 4-Tage-Prognose liegt ${where} dem heutigen Wert (${fmtPct(fc.rel)}).">⚠</span>`;
+}
+// Prognose-Kasten unter dem Chart (Popup mit 4-Tage-Tabelle, Team-Charts ohne)
+function forecastSummaryHtml(fc, lastDate, withTable) {
+  if (!fc) return `<p class="muted" style="font-size:12px; margin-top:10px;">Keine Prognose: zu wenig Verlaufsdaten (mindestens ${FC_MIN_POINTS} Tage nötig).</p>`;
+  const lab = fcLabel(fc);
+  const dayLabel = h => { const d = new Date(lastDate); d.setDate(d.getDate() + h); return fmtDay(d); };
+  const end = fc.points[FC_HORIZON - 1];
+  const table = withTable ? `<table><thead><tr><th>Tag</th><th>Prognose</th><th>Zielkorridor 80 %</th></tr></thead><tbody>
+      ${fc.points.map(pt => `<tr><td>${dayLabel(pt.h)}</td><td>${fmtMoney(pt.mv)}</td><td>${fmtMoney(pt.lo)} bis ${fmtMoney(pt.hi)}</td></tr>`).join('')}
+    </tbody></table>` : '';
+  const method = fc.phi > 0
+    ? `Methode: Die Tagesveränderung der letzten Tage wird fortgeschrieben und flacht Tag für Tag ab, per Rückrechnung über die letzten ${FC_CAL_WINDOW} Tage auf diesen Verlauf kalibriert.`
+    : 'Methode: Trend fortschreiben war hier in der Rückrechnung nicht besser als "bleibt gleich", deshalb seitwärts. Der Korridor zeigt die typische Schwankung.';
+  return `<div class="fc-box">
+    <div class="row" style="justify-content:space-between; margin-bottom:10px;">
+      <span class="muted" style="font-size:11px; text-transform:uppercase; letter-spacing:0.5px;">Prognose bis ${dayLabel(FC_HORIZON)}</span>
+      <span class="${lab.cls}" style="font-weight:600;">${lab.text}</span>
+    </div>
+    <div class="row" style="gap:24px;">
+      <div><div class="muted" style="font-size:12px;">Erwarteter Wert</div><div style="font-size:18px;">${fmtMoney(end.mv)}</div></div>
+      <div><div class="muted" style="font-size:12px;">Veränderung</div><div style="font-size:18px;">${trendBadge(fc.change)} <span class="muted" style="font-size:12px;">${fmtPct(fc.rel)}</span></div></div>
+      <div><div class="muted" style="font-size:12px;">Zielkorridor 80 %</div><div style="font-size:14px; margin-top:3px;">${fmtMoney(fc.lo)} bis ${fmtMoney(fc.hi)}</div></div>
+      <div><div class="muted" style="font-size:12px;">Trefferquote Richtung</div><div style="font-size:18px;">${fc.hitRate != null ? Math.round(fc.hitRate * 100) + ' %' : '<span class="muted">k. A.</span>'}</div></div>
+    </div>
+    ${table}
+    <p class="muted" style="font-size:11px; margin:10px 0 0; line-height:1.5;">${method} ${fcHitText(fc)}${fc.calibrated ? '' : ' Kurze Historie: Korridor grob aus der bisherigen Schwankung geschätzt.'} Spieltage, Verletzungen und Aufstellungsnews kennt das Modell nicht.</p>
   </div>`;
+}
+
+// ---------- Verlaufs-Chart mit Prognose ----------
+// SVG mit festen 0..100-Koordinaten, das auf die Kastengröße gestreckt wird (Linien bleiben dank
+// non-scaling-stroke gleich dick). Beschriftungen sind HTML, damit sie auch auf dem Handy lesbar bleiben.
+const CHART_DATA = {}; // Container-ID -> { values, dates, fc, range }
+
+function fmtDay(d) { return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }); }
+function compactMoney(n) {
+  const abs = Math.abs(n);
+  if (abs >= 1e6) return (n / 1e6).toLocaleString('de-DE', { maximumFractionDigits: 1 }) + ' Mio';
+  if (abs >= 1e3) return Math.round(n / 1e3).toLocaleString('de-DE') + ' Tsd';
+  return Math.round(n).toLocaleString('de-DE');
+}
+function setChartRange(id, days) {
+  if (!CHART_DATA[id]) return;
+  CHART_DATA[id].range = days;
+  renderValueChart(id);
+}
+
+function renderValueChart(id) {
+  const box = document.getElementById(id);
+  const st = CHART_DATA[id];
+  if (!box || !st || !st.values.length) return;
+  const n = st.values.length;
+  const showN = Math.min(n, st.range);
+  const vals = st.values.slice(n - showN);
+  const dates = st.dates.slice(n - showN);
+  const fcPts = st.fc ? st.fc.points : [];
+  const slots = Math.max(1, showN - 1 + fcPts.length);
+  const X0 = 1.5, X1 = 98.5, Y0 = 8, Y1 = 94;
+  const xAt = i => X0 + (i / slots) * (X1 - X0);
+  let min = Math.min(...vals), max = Math.max(...vals);
+  fcPts.forEach(pt => { min = Math.min(min, pt.lo); max = Math.max(max, pt.hi); });
+  if (max - min < max * 0.002) { max += max * 0.01 + 1; min -= min * 0.01 + 1; } // flache Linie nicht auf eine Pixelzeile quetschen
+  const yAt = v => Y1 - ((v - min) / (max - min)) * (Y1 - Y0);
+  const xy = (i, v) => `${xAt(i).toFixed(2)},${yAt(v).toFixed(2)}`;
+  const lastXn = xAt(showN - 1);
+  const lastX = lastXn.toFixed(2);
+  const histColor = vals[showN - 1] >= vals[0] ? '#3ddc84' : '#ff5c5c';
+  const grid = [max, (max + min) / 2, min];
+
+  let svg = grid.map(v => `<line x1="0" x2="100" y1="${yAt(v).toFixed(2)}" y2="${yAt(v).toFixed(2)}" stroke="#2a2f3a" stroke-width="1" vector-effect="non-scaling-stroke" />`).join('');
+  let tags = '';
+  if (fcPts.length) {
+    const startPt = xy(showN - 1, vals[showN - 1]);
+    const upper = fcPts.map((pt, k) => xy(showN + k, pt.hi));
+    const lower = fcPts.map((pt, k) => xy(showN + k, pt.lo)).reverse();
+    svg += `<rect x="${lastX}" y="0" width="${(100 - lastXn).toFixed(2)}" height="100" fill="rgba(255,178,56,0.05)" />
+      <polygon points="${[startPt, ...upper, ...lower].join(' ')}" fill="rgba(255,178,56,0.22)" />
+      <line x1="${lastX}" x2="${lastX}" y1="0" y2="100" stroke="#9aa1ac" stroke-width="1" stroke-dasharray="3 3" opacity="0.6" vector-effect="non-scaling-stroke" />
+      <polyline points="${[startPt, ...fcPts.map((pt, k) => xy(showN + k, pt.mv))].join(' ')}" fill="none" stroke="#ffb238" stroke-width="2" stroke-dasharray="5 4" vector-effect="non-scaling-stroke" />`;
+    const lastDate = dates[showN - 1];
+    const isToday = lastDate.toDateString() === new Date().toDateString();
+    tags = `<span class="vc-tag" style="left:${lastX}%;">${isToday ? 'heute' : 'Stand ' + fmtDay(lastDate)}</span>`;
+  }
+  svg += `<polyline points="${vals.map((v, i) => xy(i, v)).join(' ')}" fill="none" stroke="${histColor}" stroke-width="2" stroke-linejoin="round" vector-effect="non-scaling-stroke" />`;
+  const yLabels = grid.map(v => `<span class="vc-ylab" style="top:${yAt(v).toFixed(2)}%;">${compactMoney(v)}</span>`).join('');
+
+  // Datumsachse: 4 Verlaufsdaten + Prognose-Enddatum (ohne Prognose 5 Verlaufsdaten)
+  const narrow = box.clientWidth > 0 && box.clientWidth < 480; // Handy: weniger Daten, damit nichts kollidiert
+  const fracs = fcPts.length ? (narrow ? [0, 0.5] : [0, 0.25, 0.5, 0.75]) : (narrow ? [0, 0.5, 1] : [0, 0.25, 0.5, 0.75, 1]);
+  const idxs = [...new Set(fracs.map(f => Math.round(f * (showN - 1))))];
+  const xLabels = idxs.map(i => {
+    const shift = i === 0 ? '0' : (!fcPts.length && i === showN - 1) ? '-100%' : '-50%';
+    return `<span style="left:${xAt(i).toFixed(2)}%; transform:translateX(${shift});">${fmtDay(dates[i])}</span>`;
+  });
+  if (fcPts.length) {
+    const endDate = new Date(dates[showN - 1]);
+    endDate.setDate(endDate.getDate() + fcPts.length);
+    xLabels.push(`<span style="left:${X1}%; transform:translateX(-100%); color:#ffb238;">${fmtDay(endDate)}</span>`);
+  }
+
+  const ranges = [{ label: '30 Tage', days: 30 }, { label: `${HISTORY_DAYS} Tage`, days: Infinity }];
+  const rangeBtns = n > 31
+    ? `<div class="vc-range">${ranges.map(r => `<button class="${st.range === r.days ? 'active' : ''}" onclick="setChartRange('${id}', ${r.days})">${r.label}</button>`).join('')}</div>`
+    : '';
+  const legend = `<div class="vc-legend">
+      <span><i style="border-top:2px solid ${histColor};"></i>Verlauf</span>
+      ${fcPts.length ? '<span><i style="border-top:2px dashed #ffb238;"></i>Prognose</span><span><i style="height:8px; background:rgba(255,178,56,0.35); border-radius:2px;"></i>Zielkorridor 80 %</span>' : ''}
+    </div>`;
+  box.innerHTML = `<div class="vc-head">${legend}${rangeBtns}</div>
+    <div class="vc-plot">
+      <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">${svg}</svg>
+      ${yLabels}${tags}
+    </div>
+    <div class="vc-xaxis">${xLabels.join('')}</div>`;
 }
 
 // Einfache Momentum-Heuristik auf Basis der letzten Tages-Werte (p._history, aus computeMarketTrends).
@@ -2061,10 +2452,25 @@ function chartDateAxis(pointCount) {
 // gleich stark oder stärker -> "Halten". Bei zu wenig Daten oder uneindeutigem Muster -> "Beobachten".
 const UNTOUCHABLE_PLAYERS = new Set(); // Spieler-IDs, die der Nutzer als "nicht verkäuflich" markiert hat
 
+// "Unverkäuflich"-Markierungen je Liga im Browser merken (localStorage), damit sie ein Neuladen überleben.
+// Nur Spieler-IDs, keine Zugangsdaten. Ist der Speicher gesperrt (z.B. privates Fenster), läuft alles ohne.
+function untouchableStorageKey() { return 'kbdash_untouchable_' + CURRENT_LEAGUE; }
+function loadUntouchables() {
+  UNTOUCHABLE_PLAYERS.clear();
+  try {
+    const raw = localStorage.getItem(untouchableStorageKey());
+    if (raw) JSON.parse(raw).forEach(id => UNTOUCHABLE_PLAYERS.add(String(id)));
+  } catch (e) { /* Speicher nicht verfügbar oder Eintrag beschädigt */ }
+}
+function saveUntouchables() {
+  try { localStorage.setItem(untouchableStorageKey(), JSON.stringify([...UNTOUCHABLE_PLAYERS])); } catch (e) { /* Speicher nicht verfügbar */ }
+}
+
 function toggleUntouchable(pid) {
   const key = String(pid);
   if (UNTOUCHABLE_PLAYERS.has(key)) UNTOUCHABLE_PLAYERS.delete(key);
   else UNTOUCHABLE_PLAYERS.add(key);
+  saveUntouchables();
   renderHoldSell();
 }
 
@@ -2123,7 +2529,11 @@ function statusBadge(p) {
   return `<span class="badge ${info.cls}" title="Status-Code ${st}, ungeprüft">${info.label}</span>`;
 }
 
+// Spielername HTML-sicher (wird überall per innerHTML eingesetzt)
 function playerName(p) {
+  return esc(playerNameRaw(p));
+}
+function playerNameRaw(p) {
   if (!p) return '–';
   const src = p.player || p.pl || p;
   // Kickbase v4 nutzt teils ein einzelnes "n"-Feld für den (Nach-)Namen, ähnlich wie bei Liga-Namen
@@ -2171,7 +2581,7 @@ function renderLeagueTable() {
     const tv = m._computedTeamValue !== undefined ? m._computedTeamValue : m.teamValue;
     return `<tr>
     <td>${idx + 1}</td>
-    <td>${m.name}</td>
+    <td>${esc(m.name)}</td>
     <td>${m.points != null ? m.points : '<span class="muted">–</span>'}</td>
     <td>${tv === undefined ? '<span class="spinner"></span>' : (tv != null ? fmtMoney(tv) : '<span class="muted">–</span>')}</td>
     <td>${m._playerCount != null ? m._playerCount : '<span class="muted">–</span>'}</td>
@@ -2186,7 +2596,7 @@ function renderLeagueTable() {
     </tr></thead><tbody>${rows}</tbody></table>
     ${hasComputedTeamValue ? '<p class="muted" style="font-size:12px; margin-top:8px;">Teamwerte aus Summe der Kader-Marktwerte berechnet (das "tv"-Feld aus der Liga-Antwort selbst ist bislang 0/leer).</p>' :
       `<div style="margin-top:10px;"><a class="link" onclick="loadRealTeamValues()">Echte Teamwerte laden</a> (ein Zusatz-Request pro Manager, das "tv"-Feld aus der Liga-Antwort ist bislang 0)</div>`}
-    ${hasPoints ? '' : statusHtml('info', 'Kein Punkte-Feld in der Ranking-Antwort gefunden — Reihenfolge entspricht der Server-Antwort, nicht zwingend der echten Platzierung. Rohdaten unten prüfen.') + `<div style="margin-top:8px;"><a class="link" onclick="toggleLeagueTableRaw()">Rohdaten anzeigen (ein Manager)</a></div><div id="leagueTableRawBox" style="display:none; margin-top:10px;"><pre>${JSON.stringify(sorted[0].raw, null, 2)}</pre></div>`}`;
+    ${hasPoints ? '' : statusHtml('info', 'Kein Punkte-Feld in der Ranking-Antwort gefunden — Reihenfolge entspricht der Server-Antwort, nicht zwingend der echten Platzierung. Rohdaten unten prüfen.') + `<div style="margin-top:8px;"><a class="link" onclick="toggleLeagueTableRaw()">Rohdaten anzeigen (ein Manager)</a></div><div id="leagueTableRawBox" style="display:none; margin-top:10px;"><pre>${esc(JSON.stringify(sorted[0].raw, null, 2))}</pre></div>`}`;
 }
 
 // Lädt für jeden Manager einzeln den Kader und summiert die Marktwerte, da das "tv"-Feld
@@ -2226,6 +2636,7 @@ async function loadManagers() {
   const status = document.getElementById('managersStatus');
   const box = document.getElementById('managersList');
   document.getElementById('managerSquadBox').innerHTML = '';
+  delete CHART_DATA.managerTeamValueChartPlot; // Kader-Ansicht ist weg, ihr Team-Chart auch
   if (!CURRENT_LEAGUE) {
     box.innerHTML = '<span class="muted">Wähle zuerst eine Liga oben im Start-Tab.</span>';
     return;
@@ -2255,7 +2666,7 @@ async function loadManagers() {
       status.innerHTML = statusHtml('ok', `Geladen über <code>${path}</code>`);
       box.innerHTML = LEAGUE_MANAGERS.map(m =>
         `<div style="padding:8px 0; border-bottom:1px solid var(--border);">
-          <a class="link" onclick="loadManagerSquad('${m.id}','${(m.name || '').replace(/'/g, "\\'")}')">${m.name}</a>
+          <a class="link" data-manager-id="${esc(m.id)}" onclick="loadManagerSquad(this.dataset.managerId)">${esc(m.name)}</a>
         </div>`
       ).join('');
       return;
@@ -2285,7 +2696,7 @@ function renderManagerSquad(players, data, managerName) {
     const profit = profitVal(p);
     return `<tr><td>${playerCell(p)}</td><td>${fmtMoney(p.marketValue ?? p.mv)}</td><td>${trendBadge(trendVal(p))}</td><td>${profit != null ? trendBadge(profit) : '<span class="muted">–</span>'}</td><td>${p.totalPoints ?? p.tp ?? p.points ?? '–'}</td><td><a class="link" onclick="jumpToValueHistory('${getPid(p)}')">Verlauf</a></td></tr>`;
   }).join('');
-  box.innerHTML = `<h3>Kader: ${managerName}</h3>
+  box.innerHTML = `<h3>Kader: ${esc(managerName)}</h3>
     <div style="margin-bottom:8px;"><a class="link" onclick="toggleManagerSquadRaw()">Rohdaten anzeigen</a> (falls Namen falsch aussehen, bitte Screenshot schicken)</div>
     <table><thead><tr>
       ${genericSortHeader('managerSquad', 'Spieler', 'name', rerender, true)}
@@ -2295,7 +2706,7 @@ function renderManagerSquad(players, data, managerName) {
       ${genericSortHeader('managerSquad', 'Punkte', 'points', rerender)}
       <th>Verlauf</th>
     </tr></thead><tbody>${rows}</tbody></table>
-    <div id="managerSquadRawBox" style="display:none; margin-top:14px;"><pre>${JSON.stringify(data ?? LAST_MANAGER_SQUAD_RAW, null, 2)}</pre></div>
+    <div id="managerSquadRawBox" style="display:none; margin-top:14px;"><pre>${esc(JSON.stringify(data ?? LAST_MANAGER_SQUAD_RAW, null, 2))}</pre></div>
     <div style="margin-top:18px;">
       <button class="primary" style="width:auto; margin:0; padding:8px 14px;" onclick="loadManagerTeamValueChart()">Marktwert-Verlauf des Teams laden</button>
       <p class="muted" style="font-size:12px; margin-top:6px;">Ein Zusatz-Request pro Spieler, dauert je nach Kadergröße ein paar Sekunden.</p>
@@ -2304,8 +2715,13 @@ function renderManagerSquad(players, data, managerName) {
 }
 
 async function loadManagerSquad(managerId, managerName) {
+  if (managerName === undefined) { // Klick aus der Manager-Liste liefert nur die ID, Name aus den geladenen Managern
+    const m = LEAGUE_MANAGERS.find(x => String(x.id) === String(managerId));
+    managerName = m ? m.name : managerId;
+  }
+  delete CHART_DATA.managerTeamValueChartPlot; // Team-Chart des zuvor angezeigten Managers verwerfen
   const box = document.getElementById('managerSquadBox');
-  box.innerHTML = `<h3>Kader: ${managerName}</h3><span class="spinner"></span> Lade…`;
+  box.innerHTML = `<h3>Kader: ${esc(managerName)}</h3><span class="spinner"></span> Lade…`;
   const attempts = [
     `/v4/leagues/${CURRENT_LEAGUE}/users/${managerId}/players`,
     `/v4/leagues/${CURRENT_LEAGUE}/managers/${managerId}/squad`,
@@ -2316,7 +2732,7 @@ async function loadManagerSquad(managerId, managerName) {
     try {
       const data = await kbFetch(path);
       const players = data.players || data.it || data.pl || [];
-      if (!players.length) { box.innerHTML = `<h3>Kader: ${managerName}</h3>` + statusHtml('info', 'Geladen, aber keine Spielerliste in erwarteter Struktur.') + `<pre>${JSON.stringify(data, null, 2)}</pre>`; return; }
+      if (!players.length) { box.innerHTML = `<h3>Kader: ${esc(managerName)}</h3>` + statusHtml('info', 'Geladen, aber keine Spielerliste in erwarteter Struktur.') + `<pre>${esc(JSON.stringify(data, null, 2))}</pre>`; return; }
       LAST_MANAGER_SQUAD_PLAYERS = players; // für den Marktwert-Verlauf-Button und die Sortierung gemerkt
       LAST_MANAGER_SQUAD_RAW = data;
       LAST_MANAGER_NAME = managerName;
@@ -2325,7 +2741,7 @@ async function loadManagerSquad(managerId, managerName) {
       return;
     } catch (e) { lastErr = e; }
   }
-  box.innerHTML = `<h3>Kader: ${managerName}</h3>` + statusHtml('info', 'Kein Endpunkt hat funktioniert. Letzter Fehler: ' + (lastErr ? lastErr.message : '–'));
+  box.innerHTML = `<h3>Kader: ${esc(managerName)}</h3>` + statusHtml('info', 'Kein Endpunkt hat funktioniert. Letzter Fehler: ' + (lastErr ? lastErr.message : '–'));
 }
 
 function toggleManagerSquadRaw() {
@@ -2373,6 +2789,11 @@ async function apiTest() {
 // Enter-key login
 document.getElementById('password').addEventListener('keydown', e => {
   if (e.key === 'Enter') login();
+});
+
+// Escape schließt das Marktwert-Popup
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && document.getElementById('valueModalOverlay').style.display !== 'none') closeValueModal();
 });
 </script>
 </body>
