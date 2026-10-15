@@ -523,12 +523,11 @@
       <div class="panel">
         <h3 style="margin-top:0;">Verkaufsszenarien: Kontostand auf einen Zielwert bringen</h3>
         <p class="muted" style="font-size:13px;">
-          Sechs Wege zum Zielwert: fünf Strategien mit unterschiedlicher Priorität und eine exakt durchgerechnete Lösung.
-          Jede Strategie verkauft nach ihrer Priorität und tauscht danach Spieler, solange das die Startelf weniger schwächt.
-          Gemessen wird der Startelf-Verlust: beste Aufstellung vorher minus beste Aufstellung nachher, Bankspieler kosten
-          also keine Punkte. "Beste Lösung" ist die mit dem geringsten Startelf-Verlust. Offene Gebote aus dem Kopfbereich
-          zählen zum Zielwert. "Unverkäuflich" markierte Spieler bleiben unangetastet, ebenso die Mindestbesetzung
-          (11 Spieler und eine spielbare Formation).
+          Sechs Strategien, sechs verschiedene Kombinationen. Jede Strategie rechnet alle Wege zum Zielwert durch und nimmt
+          den besten nach ihrem Kriterium. Steht der schon auf einer Karte davor, nimmt sie den nächstbesten. Startelf-Verlust:
+          beste Aufstellung vorher minus nachher, Bankspieler kosten also keine Punkte. "Beste Lösung" ist die Karte mit dem
+          geringsten Startelf-Verlust. Offene Gebote aus dem Kopfbereich zählen zum Zielwert. "Unverkäuflich" markierte Spieler
+          bleiben unangetastet, ebenso die Mindestbesetzung (11 Spieler und eine spielbare Formation).
         </p>
         <div class="row" style="gap:10px; align-items:center; margin-bottom:14px;">
           <label for="sellTargetInput" style="margin:0; font-size:13px; white-space:nowrap;">Zielwert (Kontostand)</label>
@@ -1715,16 +1714,16 @@ async function loadHoldSellRecommendations() {
 }
 
 // ---------- Verkaufsszenarien ----------
-// Fünf Strategien mit unterschiedlicher Priorität plus eine exakt durchgerechnete Lösung, um den Kontostand auf
-// einen Zielwert zu bringen. Bewertet wird der Startelf-Verlust: beste Aufstellung vorher minus beste Aufstellung
-// nachher. Bankspieler kosten so keine Punkte. Wert je Spieler: xP für den nächsten Spieltag (Spieltag-Modul),
-// solange diese Daten fehlen der Punkteschnitt. Bei xP zählt der Verlust nach Punkteschnitt als zweites Kriterium,
-// damit ein verletzter Leistungsträger (xP fast 0) nicht als "kostenlos" gilt. Erlös = Marktwert, so viel zahlt
-// Kickbase beim Sofortverkauf. Respektiert "Unverkäuflich" (UNTOUCHABLE_PLAYERS) und die Mindestbesetzung.
+// Sechs Strategien, um den Kontostand auf einen Zielwert zu bringen. Alle sinnvollen Kombinationen werden exakt
+// durchgerechnet, jede Strategie nimmt die beste nach ihrem Kriterium, und jede Karte zeigt eine andere Kombination.
+// Startelf-Verlust = beste Aufstellung vorher minus nachher, Bankspieler kosten also keine Punkte. Wert je Spieler: xP
+// für den nächsten Spieltag (Spieltag-Modul), solange diese Daten fehlen der Punkteschnitt. Bei xP zählt der Verlust nach
+// Punkteschnitt als zweites Kriterium, damit ein verletzter Leistungsträger (xP fast 0) nicht als "kostenlos" gilt.
+// Erlös = Marktwert, so viel zahlt Kickbase beim Sofortverkauf. Respektiert "Unverkäuflich" und die Mindestbesetzung.
 let OPEN_BIDS = 0; // Summe offener Gebote, manuell im Kopf des Verkauf-Tabs eingetragen, wird nicht gespeichert
 let SELL_STATE = { requested: false, shown: false, basis: null }; // je berechnet? Karten angezeigt? Nach welcher Bewertung?
 const SELL_MIN_SQUAD = 11;
-const SELL_MAX_EXACT_N = 20; // darüber dauert die exakte Rechnung zu lange, dann bestes Strategie-Ergebnis
+const SELL_MAX_POOL = 100000; // Schutz für sehr große Kader: mehr Kombinationen werden nicht ausgewertet
 
 function effectiveBudget() { return CURRENT_BUDGET == null ? null : CURRENT_BUDGET - OPEN_BIDS; }
 
@@ -1897,233 +1896,71 @@ function computeAutoSellScenarios() {
     return { main, sec, key: [Math.round(main), Math.round(sec)] };
   }
   const cmpKey = (a, b) => (a[0] - b[0]) || (a[1] - b[1]);
-  const cmpNum = (x, y) => x === y ? 0 : x < y ? -1 : 1; // auch für Infinity sicher
-  const sumOf = list => list.reduce((a, p) => a + mvOf(p), 0);
+  const cmpNum = (x, y) => x === y ? 0 : x < y ? -1 : 1;
+  const fcMove = p => { const fc = getForecast(p); return fc ? fc.change : 0; }; // erwartete Marktwert-Änderung in 4 Tagen
+  const profitOf = p => profitVal(p) ?? 0; // Gewinn seit Kauf
 
-  // Feinschliff: überflüssige Verkäufe streichen und Spieler gegen einen oder zwei andere tauschen, solange das
-  // den Startelf-Verlust senkt und der Zielwert erreicht bleibt. Bei Gleichstand gewinnt der Tausch mit weniger
-  // Verkäufen, danach der, den die Strategie ohnehin zuerst verkaufen würde (rank). So bleibt der Charakter der
-  // Strategie erhalten, ohne unnötig Punkte zu verschenken.
-  function refine(chosen, rank) {
-    for (let guard = 0; guard < 60; guard++) {
-      const ids = new Set(chosen.map(idOf));
-      const sum = sumOf(chosen);
-      let removal = null;
-      chosen.forEach((p, i) => {
-        if (sum - mvOf(p) < needed) return;
-        const set = new Set(ids); set.delete(idOf(p));
-        const loss = lossOf(set);
-        if (!loss) return;
-        if (!removal || cmpKey(loss.key, removal.loss.key) < 0 || (cmpKey(loss.key, removal.loss.key) === 0 && rank.get(idOf(p)) > removal.rank)) {
-          removal = { i, loss, rank: rank.get(idOf(p)) };
-        }
-      });
-      if (removal) { chosen.splice(removal.i, 1); continue; } // weniger verkaufen ist nie schlechter
-      const cur = lossOf(ids);
-      const unused = sellable.filter(c => !ids.has(idOf(c)));
-      let best = null;
-      const consider = (i, add, loss) => {
-        const n = add.length, r = add.reduce((a, p) => a + rank.get(idOf(p)), 0);
-        if (!best || cmpKey(loss.key, best.loss.key) < 0 || (cmpKey(loss.key, best.loss.key) === 0 && ((n - best.n) || (r - best.r)) < 0)) best = { i, add, loss, n, r };
-      };
-      chosen.forEach((p, i) => {
-        const rest = new Set(ids); rest.delete(idOf(p));
-        const restSum = sum - mvOf(p);
-        for (const c of unused) {
-          if (restSum + mvOf(c) < needed) continue;
-          const set = new Set(rest); set.add(idOf(c));
-          const loss = lossOf(set);
-          if (loss) consider(i, [c], loss);
-        }
-        if (chosen.length >= maxSellable) return; // ein Paar braucht einen freien Verkaufsplatz
-        for (let a = 0; a < unused.length; a++) {
-          for (let b = a + 1; b < unused.length; b++) {
-            if (restSum + mvOf(unused[a]) + mvOf(unused[b]) < needed) continue;
-            const set = new Set(rest); set.add(idOf(unused[a])); set.add(idOf(unused[b]));
-            const loss = lossOf(set);
-            if (loss) consider(i, [unused[a], unused[b]], loss);
-          }
-        }
-      });
-      if (!best || cmpKey(best.loss.key, cur.key) >= 0) break; // keine echte Verbesserung mehr
-      chosen.splice(best.i, 1, ...best.add);
-    }
-  }
-
-  // Reparatur: Reicht die Strategie nicht bis zum Zielwert, weil die Verkaufsplätze (Mindestkader) oder die Formation
-  // ausgehen, ändert sie den Verkauf schrittweise: einen Spieler dazunehmen (wenn noch Platz ist), einen gegen einen
-  // wertvolleren oder einen gegen zwei tauschen. Pro Schritt der Zug, der den Zielwert mit dem geringsten
-  // Startelf-Verlust erreicht, sonst der mit dem größten Mehrerlös. Jeder Schritt erhöht den Erlös, endet also sicher.
-  // Findet fast immer eine Lösung, wenn es eine gibt; die garantierte liefert "Optimal (exakt)".
-  function repair(chosen) {
-    for (let guard = 0; guard < 30; guard++) {
-      const ids = new Set(chosen.map(idOf));
-      const sum = sumOf(chosen);
-      if (sum >= needed) return;
-      const unused = sellable.filter(c => !ids.has(idOf(c)));
-      const free = chosen.length < maxSellable;
-      let reach = null, gainStep = null;
-      const consider = (i, add, rest) => {
-        const gain = add.reduce((a, c) => a + mvOf(c), 0) - (i >= 0 ? mvOf(chosen[i]) : 0);
-        if (gain <= 0) return;
-        const set = new Set(rest); add.forEach(c => set.add(idOf(c)));
-        const loss = lossOf(set);
-        if (!loss) return;
-        if (sum + gain >= needed) {
-          if (!reach || cmpKey(loss.key, reach.loss.key) < 0 || (cmpKey(loss.key, reach.loss.key) === 0 && add.length < reach.add.length)) reach = { i, add, loss };
-        } else if (!gainStep || gain > gainStep.gain) gainStep = { i, add, gain };
-      };
-      if (free) for (const c of unused) consider(-1, [c], ids);
-      chosen.forEach((p, i) => {
-        const rest = new Set(ids); rest.delete(idOf(p));
-        for (const c of unused) consider(i, [c], rest);
-        if (free) for (let a = 0; a < unused.length; a++) for (let b = a + 1; b < unused.length; b++) consider(i, [unused[a], unused[b]], rest);
-      });
-      const step = reach || gainStep;
-      if (!step) return;
-      if (step.i >= 0) chosen.splice(step.i, 1, ...step.add); else chosen.push(...step.add);
-    }
-  }
-
-  // Greedy nach Strategie: so lange verkaufen, bis der Zielwert erreicht ist, nie mehr als maxSellable und nie so,
-  // dass keine Formation mehr spielbar ist. Reicht das nicht, Reparatur. Danach Feinschliff auf Startelf-Verlust.
-  function buildScenario(sortFn) {
-    const order = [...sellable].sort(sortFn);
-    const rank = new Map(order.map((p, i) => [idOf(p), i]));
-    const chosen = [];
-    const sold = new Set();
-    let sum = 0, blockedByLineup = false;
-    for (const p of order) {
-      if (sum >= needed || chosen.length >= maxSellable) break;
-      sold.add(idOf(p));
-      if (evalMain(sold) === null) { sold.delete(idOf(p)); blockedByLineup = true; continue; }
-      chosen.push(p);
-      sum += mvOf(p);
-    }
-    if (sum < needed) repair(chosen);
-    if (sumOf(chosen) >= needed) refine(chosen, rank);
-    const total = sumOf(chosen);
-    const reachedGoal = total >= needed;
-    return {
-      chosen, sum: total, reachedGoal, loss: lossOf(new Set(chosen.map(idOf))),
-      hitSquadLimit: !reachedGoal && chosen.length >= maxSellable,
-      hitPositionLimit: !reachedGoal && chosen.length < maxSellable && blockedByLineup
-    };
-  }
-
-  // Exakt: alle Kombinationen bis maxSellable Spieler. Geringster Startelf-Verlust, dann geringerer Verlust nach
-  // Punkteschnitt, dann kleinster Überschuss. Ein Zweig endet, sobald der Zielwert erreicht ist (mehr verkaufen kann
-  // nur schaden), sobald er schon schlechter ist als das beste Ergebnis (der Verlust wächst mit jedem Verkauf)
-  // oder sobald keine Formation mehr spielbar ist.
-  function computeExact() {
-    if (sellable.length > SELL_MAX_EXACT_N) return { tooBig: true };
-    const items = [...sellable].sort((a, b) => mvOf(b) - mvOf(a)); // große zuerst: Zielwert früher erreicht
-    const pre = [0];
-    items.forEach(p => pre.push(pre[pre.length - 1] + mvOf(p)));
-    const sold = new Set();
-    const stack = [];
-    let best = null;
-    const walk = (start, sum) => {
-      for (let i = start; i < items.length; i++) {
-        // Schranke: Selbst die wertvollsten noch möglichen Spieler reichen nicht mehr, spätere sind nur günstiger
-        const slots = maxSellable - stack.length;
-        if (sum + pre[Math.min(items.length, i + slots)] - pre[i] < needed) break;
-        const p = items[i];
-        sold.add(idOf(p)); stack.push(p);
-        const loss = lossOf(sold);
-        if (loss && (!best || cmpKey(loss.key, best.loss.key) <= 0)) {
-          const s = sum + mvOf(p);
-          if (s >= needed) {
-            if (!best || cmpKey(loss.key, best.loss.key) < 0 || s < best.sum) best = { chosen: [...stack], sum: s, loss };
-          } else if (stack.length < maxSellable) walk(i + 1, s);
-        }
-        sold.delete(idOf(p)); stack.pop();
+  // Alle sinnvollen Kombinationen: Zielwert erreicht, höchstens maxSellable Verkäufe, Formation weiter spielbar und kein
+  // überflüssiger Verkauf. Spieler absteigend nach Marktwert: Der zuletzt dazugekommene ist der günstigste, und erst
+  // mit ihm reicht es, also ist keiner zu viel. Zweige enden, wenn das Ziel erreicht ist, keine Formation mehr spielbar
+  // ist oder selbst die wertvollsten noch möglichen Spieler nicht mehr reichen.
+  const items = [...sellable].sort((a, b) => mvOf(b) - mvOf(a));
+  const pre = [0];
+  items.forEach(p => pre.push(pre[pre.length - 1] + mvOf(p)));
+  const pool = [];
+  let truncated = false;
+  const sold = new Set();
+  const stack = [];
+  const walk = (start, sum) => {
+    for (let i = start; i < items.length; i++) {
+      if (pool.length >= SELL_MAX_POOL) { truncated = true; return; }
+      const slots = maxSellable - stack.length;
+      if (sum + pre[Math.min(items.length, i + slots)] - pre[i] < needed) break;
+      const p = items[i];
+      sold.add(idOf(p)); stack.push(p);
+      const loss = lossOf(sold);
+      if (loss) {
+        const s = sum + mvOf(p);
+        if (s >= needed) {
+          pool.push({
+            chosen: [...stack], sum: s, loss, count: stack.length,
+            move: stack.reduce((a, x) => a + fcMove(x), 0), profit: stack.reduce((a, x) => a + profitOf(x), 0),
+            key: stack.map(idOf).sort().join(',')
+          });
+        } else if (stack.length < maxSellable) walk(i + 1, s);
       }
-    };
-    walk(0, 0);
-    return best;
-  }
-
-  const expectedMove = p => { const fc = getForecast(p); return fc ? fc.change : (trendVal(p) ?? 0); };
-  const marginal = new Map(sellable.map(p => { const l = lossOf(new Set([idOf(p)])); return [idOf(p), l ? l.main : Infinity]; }));
-  const scenarios = [
-    {
-      title: 'Wenige Transaktionen',
-      desc: 'Verkauft die wertvollsten Spieler zuerst, um mit möglichst wenigen Verkäufen den Zielwert zu erreichen.',
-      result: buildScenario((a, b) => cmpNum(mvOf(b), mvOf(a)))
-    },
-    {
-      title: 'Punkte schonen',
-      desc: 'Verkauft zuerst die Spieler, deren Verkauf die Startelf am wenigsten schwächt, also Bankspieler, und von ihnen die schwächsten.',
-      result: buildScenario((a, b) => cmpNum(marginal.get(idOf(a)), marginal.get(idOf(b))) || cmpNum(val.score(a), val.score(b)))
-    },
-    {
-      title: 'Trend nutzen',
-      desc: 'Verkauft zuerst Spieler mit der schwächsten 4-Tage-Prognose und lässt steigende Spieler in Ruhe. Ohne Prognose entscheidet der heutige Trend.',
-      result: buildScenario((a, b) => cmpNum(expectedMove(a), expectedMove(b)) || cmpNum(trendVal(a) ?? 0, trendVal(b) ?? 0))
-    },
-    {
-      title: 'Gewinn realisieren',
-      desc: 'Verkauft zuerst Spieler mit dem höchsten Gesamtgewinn seit Kauf, um Profite mitzunehmen.',
-      result: buildScenario((a, b) => cmpNum(profitVal(b) ?? -Infinity, profitVal(a) ?? -Infinity))
-    },
-    {
-      title: 'Verlust begrenzen',
-      desc: 'Verkauft zuerst Spieler mit dem größten Gesamtverlust seit Kauf.',
-      result: buildScenario((a, b) => cmpNum(profitVal(a) ?? Infinity, profitVal(b) ?? Infinity))
+      sold.delete(idOf(p)); stack.pop();
     }
-  ];
+  };
+  walk(0, 0);
 
-  const byQuality = (a, b) => cmpKey(a.loss.key, b.loss.key) || (a.sum - b.sum);
-  const exact = computeExact();
-  let exactResult;
-  if (exact && exact.tooBig) {
-    const fallback = scenarios.map(s => s.result).filter(r => r.reachedGoal && r.loss).sort(byQuality)[0];
-    exactResult = fallback ? { ...fallback, exact: false } : { chosen: [], sum: 0, reachedGoal: false, loss: null, exact: false };
-  } else if (exact) {
-    exactResult = { chosen: exact.chosen, sum: exact.sum, reachedGoal: true, loss: exact.loss, exact: true };
-  } else {
-    exactResult = { chosen: [], sum: 0, reachedGoal: false, loss: null, exact: true };
-  }
-  scenarios.push({
-    title: exactResult.exact ? 'Optimal (exakt)' : 'Optimal (Näherung)',
-    desc: exactResult.exact
-      ? 'Rechnet alle Kombinationen durch: garantiert der geringste Startelf-Verlust, bei Gleichstand der kleinste Überschuss.'
-      : 'Zu viele verkäufliche Spieler für eine exakte Rechnung, deshalb das beste Ergebnis der fünf Strategien.',
-    result: exactResult
-  });
-
-  // "Beste Lösung": geringster Startelf-Verlust, bei Gleichstand der kleinste Überschuss
-  const bestResult = scenarios.map(s => s.result).filter(r => r.reachedGoal && r.loss).sort(byQuality)[0] || null;
   const before = computeBestLineupBy(squad, val.score);
   const beforeIds = new Set(before ? before.starters.map(idOf) : []);
   const fmtLoss = x => x > 0.5 ? `-${fmtPts(x)}` : '0';
   const fmtTotal = t => val.basis === 'xp' ? `${fmtPts(t)} xP` : `Ø ${fmtPts(t)}`;
   const scoreTxt = p => fmtPts(val.score(p));
   const playerBadge = (p, extraCls = '', prefix = '', title = '') => `<span class="badge${extraCls}" title="${title ? title + ' · ' : ''}${val.unit} ${scoreTxt(p)}">${prefix}${avatarHtml(p)}${playerName(p)} <span class="muted">${scoreTxt(p)}</span>${statusTag(p)}</span>`;
+  const signedMoney = x => `${x > 0 ? '+' : x < 0 ? '-' : ''}${compactMoney(Math.abs(x))} €`;
 
-  const cards = scenarios.map(s => {
-    const r = s.result;
-    const { chosen, sum, reachedGoal, hitSquadLimit, hitPositionLimit } = r;
+  // Eine Karte: Verkauf, Kennzahlen, Startelf und Bank danach
+  function cardHtml(title, desc, combo, isBest, notice) {
+    const { chosen, sum } = combo;
+    const reached = sum >= needed;
     const newBudget = CURRENT_BUDGET + sum;
     const afterBids = newBudget - OPEN_BIDS;
-    const isBest = !!bestResult && reachedGoal && !!r.loss && byQuality(r, bestResult) === 0;
-    const barPct = reachedGoal ? Math.max(4, Math.min(100, (needed / sum) * 100)) : 0;
+    const barPct = reached ? Math.max(4, Math.min(100, (needed / sum) * 100)) : Math.min(100, (sum / needed) * 100);
     const soldIds = new Set(chosen.map(idOf));
     const remaining = squad.filter(p => !soldIds.has(idOf(p)));
     const posCounts = {};
     remaining.forEach(p => { const l = posLabel(p); posCounts[l] = (posCounts[l] ?? 0) + 1; });
     const posSummary = ['TW', 'ABW', 'MF', 'ST'].map(l => `${posCounts[l] ?? 0} ${l}`).join(' · ');
-    const chips = chosen.length
-      ? `<div class="row" style="gap:6px; flex-wrap:wrap; margin-top:12px;">${chosen.map(p => `<span class="badge">${avatarHtml(p)}${playerName(p)} · ${fmtMoney(mvOf(p))} <span class="muted">${beforeIds.has(idOf(p)) ? 'Startelf' : 'Bank'}</span></span>`).join('')}</div>`
-      : '<p class="muted" style="font-size:12px; margin-top:12px;">Keine Spieler nötig.</p>';
+    const chips = `<div class="row" style="gap:6px; flex-wrap:wrap; margin-top:12px;">${chosen.map(p => `<span class="badge">${avatarHtml(p)}${playerName(p)} · ${fmtMoney(mvOf(p))} <span class="muted">${beforeIds.has(idOf(p)) ? 'Startelf' : 'Bank'}</span></span>`).join('')}</div>`;
     const lineup = computeBestLineupBy(remaining, val.score);
-    let lineupHtml;
+    let lineupHtml = '<p class="muted" style="font-size:12px; margin-top:14px; padding-top:14px; border-top:1px solid var(--border);">Keine gültige Aufstellung mit dem verbleibenden Kader möglich.</p>';
     if (lineup) {
       const starterIds = new Set(lineup.starters.map(idOf));
       const posOrder = p => { const pos = Number(getPos(p)); return pos >= 1 && pos <= 4 ? pos : 9; };
-      const bench = remaining.filter(p => !starterIds.has(idOf(p)))
-        .sort((a, b) => (posOrder(a) - posOrder(b)) || cmpNum(val.score(b), val.score(a)));
+      const bench = remaining.filter(p => !starterIds.has(idOf(p))).sort((a, b) => (posOrder(a) - posOrder(b)) || cmpNum(val.score(b), val.score(a)));
       const starterBadge = p => beforeIds.has(idOf(p)) ? playerBadge(p) : playerBadge(p, ' promoted', '↑ ', 'Rückt von der Bank in die Startelf');
       const benchHtml = bench.length
         ? `<div class="row" style="gap:6px; flex-wrap:wrap;">${bench.map(p => playerBadge(p, '', `<span class="pos-tag">${posLabel(p)}</span>`)).join('')}</div>`
@@ -2141,41 +1978,96 @@ function computeAutoSellScenarios() {
           <div class="muted" style="font-size:11px; text-transform:uppercase; letter-spacing:0.5px; margin:14px 0 8px;">Bank danach (${bench.length})</div>
           ${benchHtml}
         </div>`;
-    } else {
-      lineupHtml = '<p class="muted" style="font-size:12px; margin-top:14px; padding-top:14px; border-top:1px solid var(--border);">Keine gültige Aufstellung mit dem verbleibenden Kader möglich.</p>';
     }
-    const lossMain = r.loss ? r.loss.main : null;
+    const lossMain = combo.loss.main;
+    const move = chosen.reduce((a, p) => a + fcMove(p), 0);
+    const profit = chosen.reduce((a, p) => a + profitOf(p), 0);
+    const moveHtml = Math.abs(move) < 1000 ? '<span class="muted">neutral</span>'
+      : move < 0 ? `<span class="trend-up" style="white-space:nowrap;">vermeidet ${compactMoney(-move)} €</span>` : `<span class="trend-down" style="white-space:nowrap;">verschenkt ${compactMoney(move)} €</span>`;
     return `<div style="background: var(--panel-2); border: 1px solid ${isBest ? 'var(--accent)' : 'var(--border)'}; border-radius: var(--radius); padding: 18px; ${isBest ? 'box-shadow: 0 0 0 1px var(--accent);' : ''}">
       <div class="row" style="justify-content: space-between; align-items:flex-start; gap:8px;">
-        <h3 style="margin:0; font-size:15px;">${s.title}</h3>
+        <h3 style="margin:0; font-size:15px;">${title}</h3>
         ${isBest ? '<span class="badge" style="background: var(--accent); color:#08130d; border:none; white-space:nowrap;">Beste Lösung</span>' : ''}
       </div>
-      <p class="muted" style="font-size:12px; margin: 6px 0 14px;">${s.desc}</p>
+      <p class="muted" style="font-size:12px; margin: 6px 0 14px;">${desc}</p>
       <div class="${afterBids >= 0 ? 'trend-up' : 'trend-down'}" style="font-size:26px; font-weight:700; line-height:1.2;">${fmtMoney(newBudget)}</div>
       <div class="muted" style="font-size:11px; margin-bottom:10px;">Neuer Kontostand${OPEN_BIDS > 0 ? `, nach offenen Geboten ${fmtMoney(afterBids)}` : ''}</div>
       <div style="height:6px; background: var(--border); border-radius:3px; overflow:hidden; margin-bottom:14px;">
-        <div style="height:100%; width:${barPct}%; background: var(--accent);"></div>
+        <div style="height:100%; width:${barPct}%; background: ${reached ? 'var(--accent)' : 'var(--accent-2)'};"></div>
       </div>
       <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px 16px;">
         <div><div class="muted" style="font-size:11px;">Erlös</div><div>${fmtMoney(sum)}</div></div>
-        <div><div class="muted" style="font-size:11px;">Überschuss</div><div>${reachedGoal ? fmtMoney(sum - needed) : '–'}</div></div>
+        <div><div class="muted" style="font-size:11px;">Überschuss</div><div>${reached ? fmtMoney(sum - needed) : '–'}</div></div>
         <div title="Beste Aufstellung vorher minus beste Aufstellung nachher. Bankspieler kosten keine Punkte.">
           <div class="muted" style="font-size:11px;">Startelf-Verlust (${val.unit})</div>
-          <div class="${lossMain != null && lossMain > 0.5 ? 'trend-down' : ''}">${lossMain == null ? '–' : fmtLoss(lossMain)}</div>
-          ${r.loss && val.secondary ? `<div class="sell-sub">nach Punkteschnitt ${fmtLoss(r.loss.sec)}</div>` : ''}
+          <div class="${lossMain > 0.5 ? 'trend-down' : ''}">${fmtLoss(lossMain)}</div>
+          ${val.secondary ? `<div class="sell-sub">nach Punkteschnitt ${fmtLoss(combo.loss.sec)}</div>` : ''}
         </div>
         <div><div class="muted" style="font-size:11px;">Kader danach</div><div>${remaining.length} Spieler</div></div>
+        <div title="Summe der 4-Tage-Prognose der verkauften Spieler: Fällt ihr Marktwert, vermeidet der Verkauf heute diesen Verlust."><div class="muted" style="font-size:11px;">Prognose der Verkauften</div><div>${moveHtml}</div></div>
+        <div title="Summe aus Marktwert minus Kaufpreis der verkauften Spieler"><div class="muted" style="font-size:11px;">Gewinn seit Kauf</div><div>${signedMoney(profit)}</div></div>
         <div style="grid-column: 1 / -1;"><div class="muted" style="font-size:11px;">Je Position</div><div>${posSummary}</div></div>
       </div>
-      ${!reachedGoal ? statusHtml('info', hitSquadLimit
-          ? `Mindestkadergröße von ${SELL_MIN_SQUAD} Spielern erreicht, es fehlen noch ${fmtMoney(needed - sum)}.`
-          : hitPositionLimit
-            ? `Weitere Verkäufe würden keine spielbare Formation mehr übrig lassen, es fehlen noch ${fmtMoney(needed - sum)}.`
-            : 'Reicht nicht aus, um den Zielwert zu erreichen.') + (chosen.length ? chips : '') : chips}
+      ${notice ? statusHtml('info', notice) : ''}
+      ${chosen.length ? chips : ''}
       ${lineupHtml}
     </div>`;
-  }).join('');
-  box.innerHTML = `<p class="muted" style="font-size:12px; margin:0 0 12px;">Bis zum Zielwert fehlen ${fmtMoney(needed)}${OPEN_BIDS > 0 ? `, inklusive offener Gebote von ${fmtMoney(OPEN_BIDS)}` : ''}. ${esc(val.note)}</p>
+  }
+
+  // Zielwert mit keiner Kombination erreichbar: die mit dem höchsten Erlös zeigen (gleiche Regeln)
+  if (!pool.length) {
+    let best = null;
+    const walkMax = (start, sum) => {
+      for (let i = start; i < items.length; i++) {
+        const slots = maxSellable - stack.length;
+        if (best && sum + pre[Math.min(items.length, i + slots)] - pre[i] <= best.sum) break;
+        const p = items[i];
+        sold.add(idOf(p)); stack.push(p);
+        const loss = lossOf(sold);
+        if (loss) {
+          const s = sum + mvOf(p);
+          if (!best || s > best.sum || (s === best.sum && cmpKey(loss.key, best.loss.key) < 0)) best = { chosen: [...stack], sum: s, loss };
+          if (stack.length < maxSellable) walkMax(i + 1, s);
+        }
+        sold.delete(idOf(p)); stack.pop();
+      }
+    };
+    walkMax(0, 0);
+    if (!best) return stop('<span class="muted">Kein Verkauf möglich, ohne die Mindestbesetzung (11 Spieler und eine spielbare Formation) zu verletzen.</span>');
+    box.innerHTML = `<p class="muted" style="font-size:12px; margin:0 0 12px;">Bis zum Zielwert fehlen ${fmtMoney(needed)}${OPEN_BIDS > 0 ? `, inklusive offener Gebote von ${fmtMoney(OPEN_BIDS)}` : ''}. ${esc(val.note)}</p>
+      <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:16px;">${cardHtml('Höchstmöglicher Erlös', 'Keine Kombination erreicht den Zielwert. Das ist das Maximum, das Mindestkader und Formation zulassen.', best, false, `Zielwert nicht erreichbar, es fehlen noch ${fmtMoney(needed - best.sum)}.`)}</div>`;
+    SELL_STATE = { requested: true, shown: true, basis: val.basis };
+    return;
+  }
+
+  // Sechs Strategien, jede exakt nach ihrem Kriterium, bei Gleichstand der geringste Startelf-Verlust. Jede Karte
+  // zeigt eine andere Kombination: Steht die beste einer Strategie schon auf einer Karte davor, nimmt sie die
+  // nächstbeste. "Punkte schonen" wählt zuerst und zeigt damit immer die punktbeste Kombination.
+  const byLoss = (a, b) => cmpKey(a.loss.key, b.loss.key);
+  const strategies = [
+    { title: 'Punkte schonen', desc: 'Geringster Startelf-Verlust aller Kombinationen, bei Gleichstand der kleinste Überschuss.', cmp: (a, b) => byLoss(a, b) || (a.sum - b.sum) },
+    { title: 'Wenige Transaktionen', desc: 'So wenige Verkäufe wie möglich, bei Gleichstand der geringste Startelf-Verlust.', cmp: (a, b) => (a.count - b.count) || byLoss(a, b) || (a.sum - b.sum) },
+    { title: 'Trend nutzen', desc: 'Verkauft, was laut 4-Tage-Prognose am stärksten fällt, und vermeidet so Wertverlust. Bei Gleichstand der geringste Startelf-Verlust.', cmp: (a, b) => cmpNum(a.move, b.move) || byLoss(a, b) || (a.sum - b.sum) },
+    { title: 'Kleinster Überschuss', desc: 'Verkauft so wenig Marktwert wie möglich und landet am nächsten am Zielwert. Bei Gleichstand der geringste Startelf-Verlust.', cmp: (a, b) => (a.sum - b.sum) || byLoss(a, b) },
+    { title: 'Gewinn realisieren', desc: 'Verkauft die Spieler mit dem höchsten Gewinn seit Kauf. Bei Gleichstand der geringste Startelf-Verlust.', cmp: (a, b) => cmpNum(b.profit, a.profit) || byLoss(a, b) || (a.sum - b.sum) },
+    { title: 'Verlust begrenzen', desc: 'Verkauft die Spieler mit dem größten Verlust seit Kauf. Bei Gleichstand der geringste Startelf-Verlust.', cmp: (a, b) => cmpNum(a.profit, b.profit) || byLoss(a, b) || (a.sum - b.sum) }
+  ];
+  const shown = new Set();
+  const picks = strategies.map(st => {
+    let best = null;
+    for (const c of pool) if (!shown.has(c.key) && (!best || st.cmp(c, best) < 0)) best = c;
+    if (best) shown.add(best.key);
+    return { st, combo: best };
+  });
+  const quality = (a, b) => byLoss(a, b) || (a.sum - b.sum);
+  const bestCombo = picks.filter(x => x.combo).map(x => x.combo).sort(quality)[0];
+  const cards = picks.map(({ st, combo }) => combo
+    ? cardHtml(st.title, st.desc, combo, quality(combo, bestCombo) === 0, '')
+    : `<div style="background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px;">
+        <h3 style="margin:0; font-size:15px;">${st.title}</h3>
+        <p class="muted" style="font-size:12px; margin: 6px 0 0;">Keine weitere Kombination: Alle ${pool.length} Wege zum Zielwert stehen schon auf den Karten davor.</p>
+      </div>`).join('');
+  box.innerHTML = `<p class="muted" style="font-size:12px; margin:0 0 12px;">Bis zum Zielwert fehlen ${fmtMoney(needed)}${OPEN_BIDS > 0 ? `, inklusive offener Gebote von ${fmtMoney(OPEN_BIDS)}` : ''}. ${pool.length.toLocaleString('de-DE')} sinnvolle Kombinationen${truncated ? ' (gekürzt, sehr großer Kader)' : ''} durchgerechnet. ${esc(val.note)}</p>
     <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:16px;">${cards}</div>`;
   SELL_STATE = { requested: true, shown: true, basis: val.basis };
 }
