@@ -178,6 +178,10 @@
   .fc-box { margin-top: 14px; padding: 14px; background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--radius); }
   .fc-box table { margin-top: 10px; }
 
+  /* ---------- Verkaufsszenarien ---------- */
+  .badge.promoted { border-color: var(--accent); color: var(--accent); }
+  .badge .pos-tag { color: var(--text-dim); margin-right: 4px; }
+  .sell-sub { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
   /* ---------- Spieltag, Punkte-Charts, Preis-Leistung ---------- */
   #chartTip { position: fixed; z-index: 200; display: none; pointer-events: none; max-width: 260px; padding: 8px 10px; background: #0f1115; color: var(--text); border: 1px solid var(--border); border-radius: 8px; font-size: 12px; line-height: 1.45; white-space: pre-line; box-shadow: 0 6px 18px rgba(0,0,0,0.45); }
   .mini-bars { display: inline-flex; align-items: flex-end; gap: 3px; height: 20px; vertical-align: middle; }
@@ -498,6 +502,11 @@
             <div class="muted" style="font-size:12px; text-transform:uppercase; letter-spacing:0.5px;">Kontostand</div>
             <div id="sellDashboardBudget" style="font-size:32px; font-weight:700; margin-top:4px;">–</div>
           </div>
+          <div>
+            <label for="openBidsInput" class="muted" style="font-size:12px; text-transform:uppercase; letter-spacing:0.5px; margin:0;">Offene Gebote</label>
+            <input type="text" inputmode="decimal" id="openBidsInput" placeholder="0" style="max-width:180px; margin-top:6px;" onchange="onOpenBidsChange()" title="Summe deiner laufenden Gebote, z.B. 1.500.000 oder 1,5 Mio. Wird vom Kontostand abgezogen und in den Verkaufsszenarien mitgerechnet. Wird nicht gespeichert.">
+            <div id="sellDashboardAfterBids" class="sell-sub"></div>
+          </div>
           <div id="sellDashboardSummary" class="row" style="gap:20px; flex-wrap:wrap;"></div>
           <button class="primary" style="width:auto; margin:0; padding:10px 18px; align-self:flex-start;" onclick="refreshSellDashboard()">Alles neu berechnen</button>
         </div>
@@ -506,21 +515,24 @@
       <div class="panel">
         <h3 style="margin-top:0;">Halten oder verkaufen?</h3>
         <p class="muted" style="font-size:13px;">
-          Momentum-Einschätzung je Spieler. Hak "Unverkäuflich" an, um einen Spieler aus allen Verkaufsszenarien unten auszuschließen.
+          Marktwert-Prognose je Spieler für die nächsten 4 Tage. Hak "Unverkäuflich" an, um einen Spieler aus allen Verkaufsszenarien unten auszuschließen.
         </p>
         <div id="holdSellBox" class="muted">Kader oben im Kader-Tab laden.</div>
       </div>
 
       <div class="panel">
-        <h3 style="margin-top:0;">Verkaufsszenarien — Kontostand auf einen Zielwert bringen</h3>
+        <h3 style="margin-top:0;">Verkaufsszenarien: Kontostand auf einen Zielwert bringen</h3>
         <p class="muted" style="font-size:13px;">
-          Sechs Wege, deinen Kontostand auf den Zielwert unten zu bringen: fünf mit unterschiedlicher Priorität, dazu eine exakt
-          durchgerechnete Optimallösung. "Unverkäuflich" markierte Spieler bleiben überall unangetastet, ebenso die
-          Mindestbesetzung (11 Kader, und danach muss noch eine spielbare Formation aufstellbar sein — geprüft anhand derselben Logik wie der Aufstellungs-Optimierer, nicht anhand fixer Positions-Mindestzahlen).
+          Sechs Wege zum Zielwert: fünf Strategien mit unterschiedlicher Priorität und eine exakt durchgerechnete Lösung.
+          Jede Strategie verkauft nach ihrer Priorität und tauscht danach Spieler, solange das die Startelf weniger schwächt.
+          Gemessen wird der Startelf-Verlust: beste Aufstellung vorher minus beste Aufstellung nachher, Bankspieler kosten
+          also keine Punkte. "Beste Lösung" ist die mit dem geringsten Startelf-Verlust. Offene Gebote aus dem Kopfbereich
+          zählen zum Zielwert. "Unverkäuflich" markierte Spieler bleiben unangetastet, ebenso die Mindestbesetzung
+          (11 Spieler und eine spielbare Formation).
         </p>
         <div class="row" style="gap:10px; align-items:center; margin-bottom:14px;">
           <label for="sellTargetInput" style="margin:0; font-size:13px; white-space:nowrap;">Zielwert (Kontostand)</label>
-          <input type="number" id="sellTargetInput" value="0" step="100000" style="max-width:200px;">
+          <input type="text" inputmode="decimal" id="sellTargetInput" value="0" style="max-width:200px;" title="z.B. 0, 2.000.000 oder 2 Mio">
           <button class="primary" style="width:auto; margin:0; padding:8px 14px;" onclick="computeAutoSellScenarios()">Szenarien berechnen</button>
         </div>
         <div id="autoSellScenariosBox" class="muted">Kontostand und Kader laden, dann Zielwert eingeben und berechnen.</div>
@@ -801,7 +813,7 @@ function switchTab(tab) {
   document.querySelectorAll('nav#tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   document.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
   document.getElementById('tab-' + tab).style.display = 'block';
-  if (tab === 'matchday') ensureMatchdayData(); // Spieltags-Prognose lädt erst, wenn der Tab gebraucht wird
+  if (tab === 'matchday' || tab === 'sell') ensureMatchdayData(); // Spieltagsdaten (auch für die xP-Bewertung im Verkauf-Tab) laden erst, wenn ein Tab sie braucht
 }
 
 // Zentraler, robuster Kader-Abruf (probiert dieselben Pfad-Varianten wie der Kader-Tab, cached in LAST_SQUAD_RAW)
@@ -858,9 +870,15 @@ function updateSellDashboardBudget() {
   renderMatchdayBanner(); // Banner "Nächster Spieltag" zeigt die Kontostand-Warnung
   const el = document.getElementById('sellDashboardBudget');
   if (!el) return;
-  if (CURRENT_BUDGET === null) { el.innerHTML = '<span class="muted">–</span>'; return; }
+  const after = document.getElementById('sellDashboardAfterBids');
+  if (CURRENT_BUDGET === null) { el.innerHTML = '<span class="muted">–</span>'; if (after) after.innerHTML = ''; return; }
   const cls = CURRENT_BUDGET < 0 ? 'trend-down' : 'trend-up';
   el.innerHTML = `<span class="${cls}">${fmtMoney(CURRENT_BUDGET)}</span>`;
+  if (after) {
+    const eff = effectiveBudget();
+    after.innerHTML = OPEN_BIDS > 0 ? `Nach Geboten: <span class="${eff < 0 ? 'trend-down' : 'trend-up'}">${fmtMoney(eff)}</span>` : '';
+  }
+  evalAllScenarios(); // Szenario-Rechner im Kader-Tab mit dem aktuellen Kontostand
 }
 
 // "Alles neu berechnen"-Button im Verkauf-Tab: Kontostand, Halten/Verkaufen und Szenarien in einem Rutsch
@@ -889,7 +907,7 @@ async function loadHome() {
   await loadWinnersLosers(squadPlayers);
   await loadTopMarketGainers();
   await loadHoldSellRecommendations(); // ein Zusatz-Request pro Kader-Spieler, macht den Start-Ladevorgang spürbar länger
-  if (isTabVisible('matchday')) ensureMatchdayData(); // Spieltag-Tab war schon offen: jetzt mit vollem Kader rechnen
+  if (isTabVisible('matchday') || isTabVisible('sell')) ensureMatchdayData(); // Spieltag- oder Verkauf-Tab war schon offen: jetzt mit vollem Kader rechnen
 }
 
 async function loadTeamValueChart(squadPlayers) {
@@ -1209,6 +1227,7 @@ async function selectLeague(id, name) {
     const lg = LEAGUES.find(l => String(l.id || l.i) === String(id));
     name = lg ? (lg.name || lg.n) : null;
   }
+  const leagueChanged = String(CURRENT_LEAGUE) !== String(id); // false bei "Liga neu laden"
   CURRENT_LEAGUE = id;
   CURRENT_LEAGUE_NAME = name || id;
 
@@ -1226,6 +1245,7 @@ async function selectLeague(id, name) {
   renderHoldSell();   // alte Tabelle sofort weg, damit kein Haken der alten Liga unter der neuen gespeichert wird
   MD = emptyMdState(); LIGA_FORM = null; LIGA_FORM_LOADING = null; MD_SQUAD_ROWS = []; CURRENT_CPI = null; // Spieltag-Daten der alten Liga verwerfen
   resetMatchdayUi();
+  resetSellUi(leagueChanged); // Szenarien verwerfen, offene Gebote nur bei einer anderen Liga
 
   document.getElementById('currentLeagueBadge').style.display = 'inline';
   document.getElementById('reloadLeagueBtn').style.display = 'inline-block';
@@ -1622,12 +1642,10 @@ function holdSellSortValue(p, col) {
 function renderHoldSell() {
   const box = document.getElementById('holdSellBox');
   const players = LAST_SQUAD_PLAYERS_FOR_RENDER;
-  if (!players.length) {
-    box.innerHTML = '<span class="muted">Kein Kader geladen.</span>';
-    return;
-  }
-  if (!HOLD_SELL_REQUESTED) {
-    box.innerHTML = '<span class="muted">Kader geladen. Klick auf "Berechnen".</span>';
+  const summaryEl = document.getElementById('sellDashboardSummary');
+  if (!players.length || !HOLD_SELL_REQUESTED) {
+    box.innerHTML = !players.length ? '<span class="muted">Kein Kader geladen.</span>' : '<span class="muted">Kader geladen. Oben auf "Alles neu berechnen" klicken.</span>';
+    if (summaryEl) summaryEl.innerHTML = ''; // keine Zahlen einer anderen Liga oder eines alten Kaders stehen lassen
     return;
   }
   const sorted = sortRowsGeneric('holdSell', players, holdSellSortValue);
@@ -1640,7 +1658,7 @@ function renderHoldSell() {
       cell = '<span class="spinner"></span>';
     } else {
       const reco = holdSellRecommendation(p);
-      cell = reco ? `<span class="${reco.cls}" title="${reco.reason}">${reco.label}</span>${untouchable ? '' : fcConflictMark(reco, getForecast(p))}` : '<span class="muted">zu wenig Daten</span>';
+      cell = reco ? `<span class="${reco.cls}" title="${esc(reco.reason)}" style="cursor:help;">${reco.label}</span>` : '<span class="muted" title="Zu kurze Historie für eine Prognose">zu wenig Daten</span>';
     }
     const todayCell = p._trendToday === undefined ? '<span class="spinner"></span>' : trendBadge(p._trendToday);
     const fcCell = p._trendToday === undefined ? '<span class="spinner"></span>' : forecastCell(p);
@@ -1663,11 +1681,9 @@ function renderHoldSell() {
       ${genericSortHeader('holdSell', 'Gesamt Gewinn/Verlust', 'total', rerender)}
       ${genericSortHeader('holdSell', 'Empfehlung', 'reco', rerender, true)}
     </tr></thead><tbody>${rows}</tbody></table>
-    <p class="muted" style="font-size:12px; margin-top:8px;">Einfache Momentum-Regel auf Basis der letzten Tage (3-Tage- vs. 7-Tage-Schnitt), keine Anlage- oder Spielberatung im eigentlichen Sinn. Mit Haken bei "Unverkäuflich" wird für den Spieler immer "Halten" angezeigt, unabhängig vom Trend. Die Haken werden je Liga im Browser gemerkt.</p>
-    <p class="muted" style="font-size:12px; margin-top:4px;">⚠ = die 4-Tage-Prognose zeigt klar in die Gegenrichtung der Empfehlung (Details per Mauszeiger). In dem Fall lohnt ein Blick in den Verlauf.</p>`;
+    <p class="muted" style="font-size:12px; margin-top:8px;">Empfehlung aus der 4-Tage-Prognose: "Verkaufen" nur, wenn der ganze 80-%-Zielkorridor unter dem heutigen Wert liegt. "Beobachten", wenn die Prognose eher fällt, der Korridor aber noch über den heutigen Wert reicht. Sonst "Halten". Die Rolle im Team fließt hier bewusst nicht ein, dafür sind die Verkaufsszenarien unten da. Mit Haken bei "Unverkäuflich" steht der Spieler immer auf "Halten" und fehlt in allen Szenarien. Die Haken werden je Liga im Browser gemerkt.</p>`;
 
   // Zusammenfassungs-Badges im Verkauf-Dashboard-Kopf
-  const summaryEl = document.getElementById('sellDashboardSummary');
   if (summaryEl) {
     const counts = { Verkaufen: 0, Beobachten: 0, Halten: 0 };
     players.forEach(p => {
@@ -1698,285 +1714,470 @@ async function loadHoldSellRecommendations() {
   if (LAST_SQUAD_PLAYERS_FOR_RENDER === players) renderSquadTable(players, LAST_SQUAD_RAW);
 }
 
-// Automatischer Verkaufsrechner: 5 Strategien, um mit möglichst wenig "Schaden" wieder auf einen
-// Kontostand von mindestens 0 zu kommen. Respektiert die "Unverkäuflich"-Markierungen
-// (UNTOUCHABLE_PLAYERS, gemeinsam mit Halten/Verkaufen genutzt). Nutzt nur bereits geladene
-// Kader-Daten (Marktwert, Punkteschnitt, Trend, Gesamtgewinn/-verlust), keine Zusatz-Requests.
+// ---------- Verkaufsszenarien ----------
+// Fünf Strategien mit unterschiedlicher Priorität plus eine exakt durchgerechnete Lösung, um den Kontostand auf
+// einen Zielwert zu bringen. Bewertet wird der Startelf-Verlust: beste Aufstellung vorher minus beste Aufstellung
+// nachher. Bankspieler kosten so keine Punkte. Wert je Spieler: xP für den nächsten Spieltag (Spieltag-Modul),
+// solange diese Daten fehlen der Punkteschnitt. Bei xP zählt der Verlust nach Punkteschnitt als zweites Kriterium,
+// damit ein verletzter Leistungsträger (xP fast 0) nicht als "kostenlos" gilt. Erlös = Marktwert, so viel zahlt
+// Kickbase beim Sofortverkauf. Respektiert "Unverkäuflich" (UNTOUCHABLE_PLAYERS) und die Mindestbesetzung.
+let OPEN_BIDS = 0; // Summe offener Gebote, manuell im Kopf des Verkauf-Tabs eingetragen, wird nicht gespeichert
+let SELL_STATE = { requested: false, shown: false, basis: null }; // je berechnet? Karten angezeigt? Nach welcher Bewertung?
+const SELL_MIN_SQUAD = 11;
+const SELL_MAX_EXACT_N = 20; // darüber dauert die exakte Rechnung zu lange, dann bestes Strategie-Ergebnis
+
+function effectiveBudget() { return CURRENT_BUDGET == null ? null : CURRENT_BUDGET - OPEN_BIDS; }
+
+// Betrag aus einem Textfeld lesen: 1500000, 1.500.000, 1,5 Mio, 1.5 Mio, 750 Tsd oder 750k, mit oder ohne €.
+// null = leer, NaN = nicht lesbar. (Ein Zahlenfeld hätte "1.500.000" je nach Browser still zu 1,5 € gemacht.)
+function parseEuroInput(raw) {
+  let s = String(raw ?? '').trim().toLowerCase().replace(/€/g, '').replace(/\s+/g, '');
+  if (!s) return null;
+  let factor = 1;
+  const unit = s.match(/(mio|tsd|m|k)$/);
+  if (unit) { factor = unit[1] === 'mio' || unit[1] === 'm' ? 1e6 : 1e3; s = s.slice(0, -unit[1].length); }
+  let sign = 1;
+  if (s.startsWith('-')) { sign = -1; s = s.slice(1); }
+  if (!/^[\d.,]+$/.test(s)) return NaN;
+  if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.'); // deutsch: Punkt = Tausender, Komma = Dezimal
+  else if (/^\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, ''); // 1.500.000
+  const n = Number(s); // sonst ist ein einzelner Punkt der Dezimaltrenner (1.5 Mio)
+  return Number.isFinite(n) ? sign * n * factor : NaN;
+}
+
+// Warnung für Start-Banner und Spieltag-Cockpit: Kontostand (inkl. offener Gebote) bei Anpfiff im Minus = keine Punkte
+function budgetWarningHtml() {
+  const eff = effectiveBudget();
+  if (eff == null || eff >= 0) return '';
+  const link = ` <a class="link" onclick="switchTab('sell')">Zu den Verkaufsszenarien</a>`;
+  if (CURRENT_BUDGET < 0) {
+    return statusHtml('err', `Kontostand ${fmtMoney(CURRENT_BUDGET)}${OPEN_BIDS > 0 ? `, mit offenen Geboten ${fmtMoney(eff)}` : ''}: Ist er bei Anpfiff noch im Minus, gibt es für diesen Spieltag keine Punkte.${link}`);
+  }
+  return statusHtml('err', `Gehen deine offenen Gebote (${fmtMoney(OPEN_BIDS)}) durch, rutscht der Kontostand auf ${fmtMoney(eff)}. Ist er bei Anpfiff im Minus, gibt es für diesen Spieltag keine Punkte.${link}`);
+}
+
+function onOpenBidsChange() {
+  const input = document.getElementById('openBidsInput');
+  const parsed = parseEuroInput(input ? input.value : '');
+  const val = parsed === null ? 0 : parsed;
+  if (!Number.isFinite(val) || val < 0 || (val > 0 && val < 1000)) { // unter 1.000 € ist eher ein Tippfehler als ein Gebot
+    const after = document.getElementById('sellDashboardAfterBids');
+    if (after) after.innerHTML = '<span class="trend-down">Bitte einen Betrag ab 0 € eingeben, z.B. 1.500.000 oder 1,5 Mio.</span>';
+    return;
+  }
+  OPEN_BIDS = val;
+  updateSellDashboardBudget(); // "Nach Geboten" im Kopf, Warnung im Start-Banner
+  if (SELL_STATE.requested) computeAutoSellScenarios(); // auch nach "kein Verkauf nötig" neu rechnen
+}
+
+// Liga laden: Szenarien und Zusammenfassung verwerfen, die Gebote nur bei einer anderen Liga
+// (bei "Liga neu laden" sind die Gebote bei Kickbase ja weiter offen)
+function resetSellUi(clearBids = true) {
+  if (clearBids) {
+    OPEN_BIDS = 0;
+    const input = document.getElementById('openBidsInput');
+    if (input) input.value = '';
+  }
+  SELL_STATE = { requested: false, shown: false, basis: null };
+  const box = document.getElementById('autoSellScenariosBox');
+  if (box) box.textContent = 'Kontostand und Kader laden, dann Zielwert eingeben und berechnen.';
+  const summary = document.getElementById('sellDashboardSummary');
+  if (summary) summary.innerHTML = '';
+  updateSellDashboardBudget();
+}
+
+// Spieltagsdaten fertig geladen: Szenarien, die noch nach Punkteschnitt gerechnet wurden, auf xP umstellen
+function refreshSellAfterMatchdayLoad() {
+  if (SELL_STATE.shown && SELL_STATE.basis !== 'xp') computeAutoSellScenarios();
+}
+
+// Bewertung je Spieler: xP des nächsten Spieltags, sobald für alle Kaderspieler die Punkte je Spieltag geladen
+// sind (gleiche Rechnung wie im Spieltag-Tab), sonst Punkteschnitt für alle, damit keine Einheiten gemischt werden
+function sellValuation(squad) {
+  const avg = p => avgPoints(p) ?? 0;
+  const md = MD;
+  refreshMatchdayInfo(md);
+  const next = md.info && md.info.next;
+  const withPid = squad.filter(p => getPid(p));
+  const missing = withPid.filter(p => !md.perf[getPid(p)]).length;
+  if (!next || !md.loadedAt || !withPid.length || missing) {
+    let note = 'Bewertung nach Punkteschnitt. Für xP einmal den Spieltag-Tab öffnen.';
+    if (md.loading) note = 'Bewertung nach Punkteschnitt, die Spieltagsdaten für xP laden noch. Die Szenarien rechnen sich danach automatisch neu.';
+    else if (md.loadedAt && !next) note = 'Bewertung nach Punkteschnitt: kein kommender Spieltag im Spielplan.';
+    else if (md.loadedAt && missing) note = `Bewertung nach Punkteschnitt: Für ${missing} Kaderspieler fehlen die Punkte je Spieltag (Spieltag-Tab, "Neu berechnen").`;
+    return { basis: 'avg', unit: 'Ø', score: avg, secondary: null, note };
+  }
+  const ctx = forecastContext(md);
+  const xp = new Map(withPid.map(p => [String(getPid(p)), playerForecast(p, md.perf[getPid(p)].games, ctx).xp]));
+  return {
+    basis: 'xp', unit: 'xP', score: p => xp.get(String(getPid(p))) ?? 0, secondary: avg,
+    note: `Bewertung: xP für Spieltag ${next.day} (erwartete Punkte), bei Gleichstand zählt der Punkteschnitt.`
+  };
+}
+
+// Schnelle Startelf-Bewertung für viele Kombinationen: je Position die Spieler einmal nach Wert sortieren und
+// verkaufte überspringen. Liefert dieselbe Summe wie computeBestLineupBy (beste der FORMATIONS) oder null,
+// wenn keine Formation mehr spielbar ist, ohne für jede Kombination neu zu sortieren.
+function makeLineupEvaluator(squad, score) {
+  const byPos = { 1: [], 2: [], 3: [], 4: [] };
+  for (const p of squad) {
+    const pos = getPos(p);
+    if (byPos[pos]) byPos[pos].push({ id: String(getPid(p)), v: score(p) ?? 0 });
+  }
+  Object.values(byPos).forEach(arr => arr.sort((a, b) => b.v - a.v));
+  const maxNeed = { 1: 1, 2: 0, 3: 0, 4: 0 };
+  FORMATIONS.forEach(f => {
+    maxNeed[2] = Math.max(maxNeed[2], f.def); maxNeed[3] = Math.max(maxNeed[3], f.mid); maxNeed[4] = Math.max(maxNeed[4], f.fwd);
+  });
+  return sold => {
+    const top = {};
+    for (const pos of [1, 2, 3, 4]) {
+      const sums = [0];
+      for (const x of byPos[pos]) {
+        if (sums.length > maxNeed[pos]) break;
+        if (!sold.has(x.id)) sums.push(sums[sums.length - 1] + x.v);
+      }
+      top[pos] = sums;
+    }
+    if (top[1].length < 2) return null;
+    let best = null;
+    for (const f of FORMATIONS) {
+      if (top[2].length <= f.def || top[3].length <= f.mid || top[4].length <= f.fwd) continue;
+      const t = top[1][1] + top[2][f.def] + top[3][f.mid] + top[4][f.fwd];
+      if (best === null || t > best) best = t;
+    }
+    return best;
+  };
+}
+
+// Status als kurzer Text (für Badges, in denen kein zweites Badge stecken soll)
+function statusTag(p) {
+  const st = p && p.st;
+  if (st == null || st === 0) return '';
+  const info = PLAYER_STATUS_MAP[st];
+  return ` <span class="trend-down" style="font-size:10px;">${info ? info.label : 'Status ' + esc(String(st))}</span>`;
+}
+
 function computeAutoSellScenarios() {
   const box = document.getElementById('autoSellScenariosBox');
-  if (CURRENT_BUDGET === null) {
-    box.innerHTML = '<span class="muted">Kontostand konnte nicht geladen werden — oben nochmal versuchen.</span>';
-    return;
-  }
-  if (!LAST_SQUAD_PLAYERS_FOR_RENDER.length) {
-    box.innerHTML = '<span class="muted">Kein Kader geladen.</span>';
-    return;
-  }
+  const stop = html => { box.innerHTML = html; SELL_STATE = { requested: true, shown: false, basis: null }; };
+  if (CURRENT_BUDGET === null) return stop('<span class="muted">Kontostand konnte nicht geladen werden. Oben auf "Alles neu berechnen" klicken.</span>');
+  const squad = LAST_SQUAD_PLAYERS_FOR_RENDER;
+  if (!squad.length) return stop('<span class="muted">Kein Kader geladen.</span>');
   const targetInput = document.getElementById('sellTargetInput');
-  const target = targetInput && targetInput.value !== '' ? Number(targetInput.value) : 0;
-  if (isNaN(target)) {
-    box.innerHTML = '<span class="muted">Zielwert ist keine gültige Zahl.</span>';
-    return;
+  const parsedTarget = parseEuroInput(targetInput ? targetInput.value : '');
+  const target = parsedTarget === null ? 0 : parsedTarget;
+  if (!Number.isFinite(target)) return stop('<span class="muted">Zielwert ist nicht lesbar. Beispiele: 0, 2.000.000 oder 2 Mio.</span>');
+  const eff = effectiveBudget();
+  if (eff >= target) {
+    return stop(`<span class="trend-up">Kontostand ${fmtMoney(CURRENT_BUDGET)}${OPEN_BIDS > 0 ? `, nach offenen Geboten ${fmtMoney(eff)}` : ''}: Der Zielwert von ${fmtMoney(target)} ist erreicht, kein Verkauf nötig.</span>`);
   }
-  if (CURRENT_BUDGET >= target) {
-    box.innerHTML = `<span class="trend-up">Kontostand ist bereits bei ${fmtMoney(CURRENT_BUDGET)}, das erreicht den Zielwert von ${fmtMoney(target)} bereits — kein Verkauf nötig.</span>`;
-    return;
+  const needed = target - eff;
+  const maxSellable = Math.max(0, squad.length - SELL_MIN_SQUAD);
+  if (maxSellable === 0) return stop(`<span class="muted">Dein Kader hat ${squad.length} Spieler. Bei mindestens ${SELL_MIN_SQUAD} Spielern kann nichts verkauft werden.</span>`);
+  const mvOf = p => p.marketValue ?? p.mv;
+  const idOf = p => String(getPid(p));
+  const sellable = squad.filter(p => mvOf(p) != null && !UNTOUCHABLE_PLAYERS.has(idOf(p)));
+  if (!sellable.length) return stop('<span class="muted">Keine verkäuflichen Spieler übrig. Sind alle als unverkäuflich markiert?</span>');
+
+  const val = sellValuation(squad);
+  const evalMain = makeLineupEvaluator(squad, val.score);
+  const evalSec = val.secondary ? makeLineupEvaluator(squad, val.secondary) : null;
+  const baseMain = evalMain(new Set());
+  const baseSec = evalSec ? evalSec(new Set()) : 0;
+  if (baseMain === null) return stop('<span class="muted">Mit dem aktuellen Kader ist keine spielbare Formation möglich (z.B. kein Torwart), deshalb lassen sich keine Szenarien rechnen.</span>');
+
+  // Verlust einer Verkaufsmenge, null = keine spielbare Formation mehr. Verglichen wird auf ganze Punkte gerundet,
+  // damit Nachkommastellen der xP keine Scheinunterschiede erzeugen: erst xP, dann Punkteschnitt.
+  function lossOf(sold) {
+    const t = evalMain(sold);
+    if (t === null) return null;
+    const main = baseMain - t;
+    const sec = evalSec ? baseSec - evalSec(sold) : 0;
+    return { main, sec, key: [Math.round(main), Math.round(sec)] };
   }
-  const needed = target - CURRENT_BUDGET;
-  const MIN_SQUAD_SIZE = 11;
-  const totalSquadSize = LAST_SQUAD_PLAYERS_FOR_RENDER.length;
-  const maxSellable = Math.max(0, totalSquadSize - MIN_SQUAD_SIZE);
-  if (maxSellable === 0) {
-    box.innerHTML = `<span class="muted">Dein Kader hat aktuell ${totalSquadSize} Spieler — bei einer Mindestgröße von ${MIN_SQUAD_SIZE} kann nichts verkauft werden, ohne darunter zu fallen.</span>`;
-    return;
-  }
-  const sellable = LAST_SQUAD_PLAYERS_FOR_RENDER.filter(p =>
-    (p.marketValue ?? p.mv) != null && !UNTOUCHABLE_PLAYERS.has(String(getPid(p)))
-  );
-  if (!sellable.length) {
-    box.innerHTML = '<span class="muted">Keine verkäuflichen Spieler übrig — sind alle als unverkäuflich markiert?</span>';
-    return;
-  }
+  const cmpKey = (a, b) => (a[0] - b[0]) || (a[1] - b[1]);
+  const cmpNum = (x, y) => x === y ? 0 : x < y ? -1 : 1; // auch für Infinity sicher
+  const sumOf = list => list.reduce((a, p) => a + mvOf(p), 0);
 
-  // Erwartete Marktwert-Bewegung für "Trend nutzen": 4-Tage-Prognose, ohne Verlauf der heutige Trend
-  function expectedMove(p) {
-    const fc = getForecast(p);
-    return fc ? fc.change : (trendVal(p) ?? 0);
-  }
-
-  // Statt fixer Mindestzahlen je Position (die sich gegenseitig ausschließen können, z.B. reichen
-  // 3 ABW nur mit mind. 2 ST, aber bei nur 1 ST bräuchte es mind. 4 ABW) prüfen wir bei jedem
-  // Verkaufskandidaten direkt, ob mit dem verbleibenden Kader noch WIRKLICH eine der 7 Formationen
-  // spielbar wäre — das ist die einzig korrekte Prüfung, weil sie exakt dieselbe Logik nutzt wie
-  // die Aufstellungsberechnung selbst.
-  function lineupFeasibleAfterSelling(soldList) {
-    const soldIds = new Set(soldList.map(p => String(getPid(p))));
-    const remaining = LAST_SQUAD_PLAYERS_FOR_RENDER.filter(p => !soldIds.has(String(getPid(p))));
-    return computeBestLineup(remaining) != null;
-  }
-
-  // Greedy: nach Strategie sortieren, so lange verkaufen bis der Zielbetrag erreicht ist —
-  // aber nie mehr als maxSellable, damit mindestens MIN_SQUAD_SIZE Spieler im Kader bleiben.
-  function buildScenario(sortFn) {
-    const sorted = [...sellable].sort(sortFn);
-    const chosen = [];
-    let sum = 0;
-    let blockedByLineup = false;
-    const usedIds = new Set();
-    for (const p of sorted) {
-      if (sum >= needed) break;
-      if (chosen.length >= maxSellable) break;
-      if (!lineupFeasibleAfterSelling([...chosen, p])) { blockedByLineup = true; continue; } // würde keine spielbare Aufstellung mehr übrig lassen, diesen Spieler überspringen
-      chosen.push(p);
-      usedIds.add(String(getPid(p)));
-      sum += (p.marketValue ?? p.mv);
-    }
-
-    // Feinschliff: jeden gewählten Spieler so lange gegen einen günstigeren Ersatz tauschen (einzelner
-    // Spieler ODER ein Paar aus zwei kleineren Spielern zusammen), wie das den Zielbetrag weiterhin
-    // erreicht UND weiterhin eine spielbare Aufstellung übrig lässt — minimiert den Überschuss über 0,
-    // statt stur bei der ersten ausreichenden Kombination stehen zu bleiben.
-    if (sum >= needed && chosen.length > 0) {
-      let improved = true;
-      while (improved) {
-        improved = false;
-        for (let i = 0; i < chosen.length; i++) {
-          const current = chosen[i];
-          const currentValue = current.marketValue ?? current.mv;
-          const sumWithoutCurrent = sum - currentValue;
-          const otherChosen = chosen.filter((_, idx) => idx !== i);
-
-          let bestSingle = null;
-          for (const cand of sellable) {
-            const pid = String(getPid(cand));
-            if (usedIds.has(pid)) continue;
-            const value = cand.marketValue ?? cand.mv;
-            if (value == null || value >= currentValue) continue; // nur echte Verbesserungen
-            if (sumWithoutCurrent + value < needed) continue; // würde nicht mehr ausreichen
-            if (!lineupFeasibleAfterSelling([...otherChosen, cand])) continue;
-            if (!bestSingle || value < bestSingle.value) bestSingle = { items: [cand], value };
-          }
-
-          let bestPair = null;
-          if (chosen.length < maxSellable) { // Paar ersetzt 1 Spieler durch 2, braucht also einen freien Slot
-            const unused = sellable.filter(c => !usedIds.has(String(getPid(c))));
-            for (let a = 0; a < unused.length; a++) {
-              for (let b = a + 1; b < unused.length; b++) {
-                const c1 = unused[a], c2 = unused[b];
-                const v1 = c1.marketValue ?? c1.mv, v2 = c2.marketValue ?? c2.mv;
-                if (v1 == null || v2 == null) continue;
-                const combined = v1 + v2;
-                if (combined >= currentValue) continue; // nur echte Verbesserungen
-                if (sumWithoutCurrent + combined < needed) continue;
-                if (!lineupFeasibleAfterSelling([...otherChosen, c1, c2])) continue;
-                if (!bestPair || combined < bestPair.value) bestPair = { items: [c1, c2], value: combined };
-              }
-            }
-          }
-
-          let best = null;
-          if (bestSingle && bestPair) best = bestSingle.value <= bestPair.value ? bestSingle : bestPair;
-          else best = bestSingle || bestPair;
-
-          if (best) {
-            chosen.splice(i, 1, ...best.items);
-            usedIds.delete(String(getPid(current)));
-            best.items.forEach(it => usedIds.add(String(getPid(it))));
-            sum = sumWithoutCurrent + best.value;
-            improved = true;
-            break; // Indizes haben sich durch splice verschoben, äußere Schleife läuft nochmal
+  // Feinschliff: überflüssige Verkäufe streichen und Spieler gegen einen oder zwei andere tauschen, solange das
+  // den Startelf-Verlust senkt und der Zielwert erreicht bleibt. Bei Gleichstand gewinnt der Tausch mit weniger
+  // Verkäufen, danach der, den die Strategie ohnehin zuerst verkaufen würde (rank). So bleibt der Charakter der
+  // Strategie erhalten, ohne unnötig Punkte zu verschenken.
+  function refine(chosen, rank) {
+    for (let guard = 0; guard < 60; guard++) {
+      const ids = new Set(chosen.map(idOf));
+      const sum = sumOf(chosen);
+      let removal = null;
+      chosen.forEach((p, i) => {
+        if (sum - mvOf(p) < needed) return;
+        const set = new Set(ids); set.delete(idOf(p));
+        const loss = lossOf(set);
+        if (!loss) return;
+        if (!removal || cmpKey(loss.key, removal.loss.key) < 0 || (cmpKey(loss.key, removal.loss.key) === 0 && rank.get(idOf(p)) > removal.rank)) {
+          removal = { i, loss, rank: rank.get(idOf(p)) };
+        }
+      });
+      if (removal) { chosen.splice(removal.i, 1); continue; } // weniger verkaufen ist nie schlechter
+      const cur = lossOf(ids);
+      const unused = sellable.filter(c => !ids.has(idOf(c)));
+      let best = null;
+      const consider = (i, add, loss) => {
+        const n = add.length, r = add.reduce((a, p) => a + rank.get(idOf(p)), 0);
+        if (!best || cmpKey(loss.key, best.loss.key) < 0 || (cmpKey(loss.key, best.loss.key) === 0 && ((n - best.n) || (r - best.r)) < 0)) best = { i, add, loss, n, r };
+      };
+      chosen.forEach((p, i) => {
+        const rest = new Set(ids); rest.delete(idOf(p));
+        const restSum = sum - mvOf(p);
+        for (const c of unused) {
+          if (restSum + mvOf(c) < needed) continue;
+          const set = new Set(rest); set.add(idOf(c));
+          const loss = lossOf(set);
+          if (loss) consider(i, [c], loss);
+        }
+        if (chosen.length >= maxSellable) return; // ein Paar braucht einen freien Verkaufsplatz
+        for (let a = 0; a < unused.length; a++) {
+          for (let b = a + 1; b < unused.length; b++) {
+            if (restSum + mvOf(unused[a]) + mvOf(unused[b]) < needed) continue;
+            const set = new Set(rest); set.add(idOf(unused[a])); set.add(idOf(unused[b]));
+            const loss = lossOf(set);
+            if (loss) consider(i, [unused[a], unused[b]], loss);
           }
         }
-      }
+      });
+      if (!best || cmpKey(best.loss.key, cur.key) >= 0) break; // keine echte Verbesserung mehr
+      chosen.splice(best.i, 1, ...best.add);
     }
+  }
 
-    const reachedGoal = sum >= needed;
+  // Reparatur: Reicht die Strategie nicht bis zum Zielwert, weil die Verkaufsplätze (Mindestkader) oder die Formation
+  // ausgehen, ändert sie den Verkauf schrittweise: einen Spieler dazunehmen (wenn noch Platz ist), einen gegen einen
+  // wertvolleren oder einen gegen zwei tauschen. Pro Schritt der Zug, der den Zielwert mit dem geringsten
+  // Startelf-Verlust erreicht, sonst der mit dem größten Mehrerlös. Jeder Schritt erhöht den Erlös, endet also sicher.
+  // Findet fast immer eine Lösung, wenn es eine gibt; die garantierte liefert "Optimal (exakt)".
+  function repair(chosen) {
+    for (let guard = 0; guard < 30; guard++) {
+      const ids = new Set(chosen.map(idOf));
+      const sum = sumOf(chosen);
+      if (sum >= needed) return;
+      const unused = sellable.filter(c => !ids.has(idOf(c)));
+      const free = chosen.length < maxSellable;
+      let reach = null, gainStep = null;
+      const consider = (i, add, rest) => {
+        const gain = add.reduce((a, c) => a + mvOf(c), 0) - (i >= 0 ? mvOf(chosen[i]) : 0);
+        if (gain <= 0) return;
+        const set = new Set(rest); add.forEach(c => set.add(idOf(c)));
+        const loss = lossOf(set);
+        if (!loss) return;
+        if (sum + gain >= needed) {
+          if (!reach || cmpKey(loss.key, reach.loss.key) < 0 || (cmpKey(loss.key, reach.loss.key) === 0 && add.length < reach.add.length)) reach = { i, add, loss };
+        } else if (!gainStep || gain > gainStep.gain) gainStep = { i, add, gain };
+      };
+      if (free) for (const c of unused) consider(-1, [c], ids);
+      chosen.forEach((p, i) => {
+        const rest = new Set(ids); rest.delete(idOf(p));
+        for (const c of unused) consider(i, [c], rest);
+        if (free) for (let a = 0; a < unused.length; a++) for (let b = a + 1; b < unused.length; b++) consider(i, [unused[a], unused[b]], rest);
+      });
+      const step = reach || gainStep;
+      if (!step) return;
+      if (step.i >= 0) chosen.splice(step.i, 1, ...step.add); else chosen.push(...step.add);
+    }
+  }
+
+  // Greedy nach Strategie: so lange verkaufen, bis der Zielwert erreicht ist, nie mehr als maxSellable und nie so,
+  // dass keine Formation mehr spielbar ist. Reicht das nicht, Reparatur. Danach Feinschliff auf Startelf-Verlust.
+  function buildScenario(sortFn) {
+    const order = [...sellable].sort(sortFn);
+    const rank = new Map(order.map((p, i) => [idOf(p), i]));
+    const chosen = [];
+    const sold = new Set();
+    let sum = 0, blockedByLineup = false;
+    for (const p of order) {
+      if (sum >= needed || chosen.length >= maxSellable) break;
+      sold.add(idOf(p));
+      if (evalMain(sold) === null) { sold.delete(idOf(p)); blockedByLineup = true; continue; }
+      chosen.push(p);
+      sum += mvOf(p);
+    }
+    if (sum < needed) repair(chosen);
+    if (sumOf(chosen) >= needed) refine(chosen, rank);
+    const total = sumOf(chosen);
+    const reachedGoal = total >= needed;
     return {
-      chosen, sum, reachedGoal,
+      chosen, sum: total, reachedGoal, loss: lossOf(new Set(chosen.map(idOf))),
       hitSquadLimit: !reachedGoal && chosen.length >= maxSellable,
       hitPositionLimit: !reachedGoal && chosen.length < maxSellable && blockedByLineup
     };
   }
 
-  // Exakte Lösung per Brute-Force über alle Teilmengen: findet garantiert die Kombination mit dem
-  // kleinsten Überschuss über 0 (nicht nur eine gute Näherung wie die 5 Strategien oben). Bei sehr
-  // vielen verkäuflichen Spielern (>22) würde das zu lange dauern, dann Rückgriff auf das beste der
-  // 5 Heuristik-Ergebnisse als Ersatz.
-  function computeExactOptimal(fallbackBest) {
-    const n = sellable.length;
-    const MAX_BRUTEFORCE_N = 20; // Aufstellungs-Check pro Kombination ist teurer als eine reine Zahlen-Prüfung, daher etwas konservativer als vorher
-    if (n === 0) return { chosen: [], sum: 0, reachedGoal: false, hitSquadLimit: false, hitPositionLimit: false, exact: true };
-    if (n > MAX_BRUTEFORCE_N) {
-      return fallbackBest ? { ...fallbackBest, exact: false } : { chosen: [], sum: 0, reachedGoal: false, hitSquadLimit: false, hitPositionLimit: false, exact: false };
-    }
-    let bestMask = -1, bestSum = Infinity;
-    for (let mask = 1; mask < (1 << n); mask++) {
-      let count = 0, sum = 0, valid = true;
-      const soldList = [];
-      for (let i = 0; i < n; i++) {
-        if (mask & (1 << i)) {
-          count++;
-          if (count > maxSellable) { valid = false; break; }
-          const p = sellable[i];
-          sum += (p.marketValue ?? p.mv);
-          soldList.push(p);
-          if (sum >= bestSum) { valid = false; break; } // Pruning: schon schlechter als bisheriges Optimum
+  // Exakt: alle Kombinationen bis maxSellable Spieler. Geringster Startelf-Verlust, dann geringerer Verlust nach
+  // Punkteschnitt, dann kleinster Überschuss. Ein Zweig endet, sobald der Zielwert erreicht ist (mehr verkaufen kann
+  // nur schaden), sobald er schon schlechter ist als das beste Ergebnis (der Verlust wächst mit jedem Verkauf)
+  // oder sobald keine Formation mehr spielbar ist.
+  function computeExact() {
+    if (sellable.length > SELL_MAX_EXACT_N) return { tooBig: true };
+    const items = [...sellable].sort((a, b) => mvOf(b) - mvOf(a)); // große zuerst: Zielwert früher erreicht
+    const pre = [0];
+    items.forEach(p => pre.push(pre[pre.length - 1] + mvOf(p)));
+    const sold = new Set();
+    const stack = [];
+    let best = null;
+    const walk = (start, sum) => {
+      for (let i = start; i < items.length; i++) {
+        // Schranke: Selbst die wertvollsten noch möglichen Spieler reichen nicht mehr, spätere sind nur günstiger
+        const slots = maxSellable - stack.length;
+        if (sum + pre[Math.min(items.length, i + slots)] - pre[i] < needed) break;
+        const p = items[i];
+        sold.add(idOf(p)); stack.push(p);
+        const loss = lossOf(sold);
+        if (loss && (!best || cmpKey(loss.key, best.loss.key) <= 0)) {
+          const s = sum + mvOf(p);
+          if (s >= needed) {
+            if (!best || cmpKey(loss.key, best.loss.key) < 0 || s < best.sum) best = { chosen: [...stack], sum: s, loss };
+          } else if (stack.length < maxSellable) walk(i + 1, s);
         }
+        sold.delete(idOf(p)); stack.pop();
       }
-      if (!valid || sum < needed) continue;
-      if (!lineupFeasibleAfterSelling(soldList)) continue; // echter Aufstellungs-Check statt Positions-Zahlen
-      if (sum < bestSum) { bestSum = sum; bestMask = mask; }
-    }
-    if (bestMask === -1) {
-      return { chosen: [], sum: 0, reachedGoal: false, hitSquadLimit: false, hitPositionLimit: false, exact: true };
-    }
-    const chosen = [];
-    for (let i = 0; i < n; i++) if (bestMask & (1 << i)) chosen.push(sellable[i]);
-    return { chosen, sum: bestSum, reachedGoal: true, hitSquadLimit: false, hitPositionLimit: false, exact: true };
+    };
+    walk(0, 0);
+    return best;
   }
 
+  const expectedMove = p => { const fc = getForecast(p); return fc ? fc.change : (trendVal(p) ?? 0); };
+  const marginal = new Map(sellable.map(p => { const l = lossOf(new Set([idOf(p)])); return [idOf(p), l ? l.main : Infinity]; }));
   const scenarios = [
     {
       title: 'Wenige Transaktionen',
       desc: 'Verkauft die wertvollsten Spieler zuerst, um mit möglichst wenigen Verkäufen den Zielwert zu erreichen.',
-      result: buildScenario((a, b) => (b.marketValue ?? b.mv) - (a.marketValue ?? a.mv))
+      result: buildScenario((a, b) => cmpNum(mvOf(b), mvOf(a)))
     },
     {
       title: 'Punkte schonen',
-      desc: 'Verkauft zuerst Spieler mit dem niedrigsten Punkteschnitt, damit möglichst wenig Punktepotenzial verloren geht.',
-      result: buildScenario((a, b) => (avgPoints(a) ?? 0) - (avgPoints(b) ?? 0))
+      desc: 'Verkauft zuerst die Spieler, deren Verkauf die Startelf am wenigsten schwächt, also Bankspieler, und von ihnen die schwächsten.',
+      result: buildScenario((a, b) => cmpNum(marginal.get(idOf(a)), marginal.get(idOf(b))) || cmpNum(val.score(a), val.score(b)))
     },
     {
       title: 'Trend nutzen',
-      desc: 'Verkauft zuerst Spieler mit der schwächsten 4-Tage-Prognose (Verluste begrenzen), lässt steigende Spieler in Ruhe. Bei gleicher Prognose (z.B. seitwärts) oder ohne Prognose entscheidet der heutige Trend.',
-      result: buildScenario((a, b) => (expectedMove(a) - expectedMove(b)) || ((trendVal(a) ?? 0) - (trendVal(b) ?? 0)))
+      desc: 'Verkauft zuerst Spieler mit der schwächsten 4-Tage-Prognose und lässt steigende Spieler in Ruhe. Ohne Prognose entscheidet der heutige Trend.',
+      result: buildScenario((a, b) => cmpNum(expectedMove(a), expectedMove(b)) || cmpNum(trendVal(a) ?? 0, trendVal(b) ?? 0))
     },
     {
       title: 'Gewinn realisieren',
       desc: 'Verkauft zuerst Spieler mit dem höchsten Gesamtgewinn seit Kauf, um Profite mitzunehmen.',
-      result: buildScenario((a, b) => (profitVal(b) ?? -Infinity) - (profitVal(a) ?? -Infinity))
+      result: buildScenario((a, b) => cmpNum(profitVal(b) ?? -Infinity, profitVal(a) ?? -Infinity))
     },
     {
       title: 'Verlust begrenzen',
-      desc: 'Verkauft zuerst Spieler mit dem größten Gesamtverlust seit Kauf, um weitere Verluste zu vermeiden.',
-      result: buildScenario((a, b) => (profitVal(a) ?? Infinity) - (profitVal(b) ?? Infinity))
+      desc: 'Verkauft zuerst Spieler mit dem größten Gesamtverlust seit Kauf.',
+      result: buildScenario((a, b) => cmpNum(profitVal(a) ?? Infinity, profitVal(b) ?? Infinity))
     }
   ];
 
-  // Bestes bisheriges Ergebnis als Fallback für den Fall, dass Brute-Force zu groß wird
-  const bestHeuristic = scenarios
-    .map(s => s.result)
-    .filter(r => r.reachedGoal)
-    .sort((a, b) => a.sum - b.sum)[0];
-  const exactResult = computeExactOptimal(bestHeuristic);
+  const byQuality = (a, b) => cmpKey(a.loss.key, b.loss.key) || (a.sum - b.sum);
+  const exact = computeExact();
+  let exactResult;
+  if (exact && exact.tooBig) {
+    const fallback = scenarios.map(s => s.result).filter(r => r.reachedGoal && r.loss).sort(byQuality)[0];
+    exactResult = fallback ? { ...fallback, exact: false } : { chosen: [], sum: 0, reachedGoal: false, loss: null, exact: false };
+  } else if (exact) {
+    exactResult = { chosen: exact.chosen, sum: exact.sum, reachedGoal: true, loss: exact.loss, exact: true };
+  } else {
+    exactResult = { chosen: [], sum: 0, reachedGoal: false, loss: null, exact: true };
+  }
   scenarios.push({
     title: exactResult.exact ? 'Optimal (exakt)' : 'Optimal (Näherung)',
     desc: exactResult.exact
-      ? 'Rechnet alle möglichen Kombinationen durch und findet garantiert die Kombination mit dem kleinsten Überschuss über 0.'
-      : 'Zu viele verkäufliche Spieler für eine exakte Berechnung — zeigt stattdessen das beste Ergebnis der 5 Strategien oben.',
+      ? 'Rechnet alle Kombinationen durch: garantiert der geringste Startelf-Verlust, bei Gleichstand der kleinste Überschuss.'
+      : 'Zu viele verkäufliche Spieler für eine exakte Rechnung, deshalb das beste Ergebnis der fünf Strategien.',
     result: exactResult
   });
 
-  const reachedResults = scenarios.map(s => s.result).filter(r => r.reachedGoal);
-  const bestSum = reachedResults.length ? Math.min(...reachedResults.map(r => r.sum)) : null;
+  // "Beste Lösung": geringster Startelf-Verlust, bei Gleichstand der kleinste Überschuss
+  const bestResult = scenarios.map(s => s.result).filter(r => r.reachedGoal && r.loss).sort(byQuality)[0] || null;
+  const before = computeBestLineupBy(squad, val.score);
+  const beforeIds = new Set(before ? before.starters.map(idOf) : []);
+  const fmtLoss = x => x > 0.5 ? `-${fmtPts(x)}` : '0';
+  const fmtTotal = t => val.basis === 'xp' ? `${fmtPts(t)} xP` : `Ø ${fmtPts(t)}`;
+  const scoreTxt = p => fmtPts(val.score(p));
+  const playerBadge = (p, extraCls = '', prefix = '', title = '') => `<span class="badge${extraCls}" title="${title ? title + ' · ' : ''}${val.unit} ${scoreTxt(p)}">${prefix}${avatarHtml(p)}${playerName(p)} <span class="muted">${scoreTxt(p)}</span>${statusTag(p)}</span>`;
 
   const cards = scenarios.map(s => {
-    const { chosen, sum, reachedGoal, hitSquadLimit, hitPositionLimit } = s.result;
+    const r = s.result;
+    const { chosen, sum, reachedGoal, hitSquadLimit, hitPositionLimit } = r;
     const newBudget = CURRENT_BUDGET + sum;
-    const lostPoints = chosen.reduce((acc, p) => acc + (avgPoints(p) ?? 0), 0);
-    const isBest = reachedGoal && bestSum !== null && sum === bestSum;
+    const afterBids = newBudget - OPEN_BIDS;
+    const isBest = !!bestResult && reachedGoal && !!r.loss && byQuality(r, bestResult) === 0;
     const barPct = reachedGoal ? Math.max(4, Math.min(100, (needed / sum) * 100)) : 0;
+    const soldIds = new Set(chosen.map(idOf));
+    const remaining = squad.filter(p => !soldIds.has(idOf(p)));
+    const posCounts = {};
+    remaining.forEach(p => { const l = posLabel(p); posCounts[l] = (posCounts[l] ?? 0) + 1; });
+    const posSummary = ['TW', 'ABW', 'MF', 'ST'].map(l => `${posCounts[l] ?? 0} ${l}`).join(' · ');
     const chips = chosen.length
-      ? `<div class="row" style="gap:6px; flex-wrap:wrap; margin-top:12px;">${chosen.map(p => `<span class="badge">${avatarHtml(p)}${playerName(p)} · ${fmtMoney(p.marketValue ?? p.mv)}</span>`).join('')}</div>`
+      ? `<div class="row" style="gap:6px; flex-wrap:wrap; margin-top:12px;">${chosen.map(p => `<span class="badge">${avatarHtml(p)}${playerName(p)} · ${fmtMoney(mvOf(p))} <span class="muted">${beforeIds.has(idOf(p)) ? 'Startelf' : 'Bank'}</span></span>`).join('')}</div>`
       : '<p class="muted" style="font-size:12px; margin-top:12px;">Keine Spieler nötig.</p>';
-    const soldIds = new Set(chosen.map(p => String(getPid(p))));
-    const remainingSquad = LAST_SQUAD_PLAYERS_FOR_RENDER.filter(p => !soldIds.has(String(getPid(p))));
-    const remainingPosCounts = {};
-    remainingSquad.forEach(p => { const l = posLabel(p); remainingPosCounts[l] = (remainingPosCounts[l] ?? 0) + 1; });
-    const remainingPosSummary = ['TW', 'ABW', 'MF', 'ST'].map(l => `${remainingPosCounts[l] ?? 0} ${l}`).join(' · ');
-    const lineup = computeBestLineup(remainingSquad);
-    const lineupHtml = lineup
-      ? `<div style="margin-top:14px; padding-top:14px; border-top:1px solid var(--border);">
+    const lineup = computeBestLineupBy(remaining, val.score);
+    let lineupHtml;
+    if (lineup) {
+      const starterIds = new Set(lineup.starters.map(idOf));
+      const posOrder = p => { const pos = Number(getPos(p)); return pos >= 1 && pos <= 4 ? pos : 9; };
+      const bench = remaining.filter(p => !starterIds.has(idOf(p)))
+        .sort((a, b) => (posOrder(a) - posOrder(b)) || cmpNum(val.score(b), val.score(a)));
+      const starterBadge = p => beforeIds.has(idOf(p)) ? playerBadge(p) : playerBadge(p, ' promoted', '↑ ', 'Rückt von der Bank in die Startelf');
+      const benchHtml = bench.length
+        ? `<div class="row" style="gap:6px; flex-wrap:wrap;">${bench.map(p => playerBadge(p, '', `<span class="pos-tag">${posLabel(p)}</span>`)).join('')}</div>`
+        : '<span class="muted" style="font-size:12px;">Niemand mehr auf der Bank.</span>';
+      lineupHtml = `<div style="margin-top:14px; padding-top:14px; border-top:1px solid var(--border);">
           <div class="row" style="justify-content: space-between; align-items:center; margin-bottom:10px;">
-            <span class="muted" style="font-size:11px; text-transform:uppercase; letter-spacing:0.5px;">Beste Aufstellung danach</span>
-            <span class="badge">${lineup.formation.def}-${lineup.formation.mid}-${lineup.formation.fwd} · Ø ${lineup.total.toFixed(1)}</span>
+            <span class="muted" style="font-size:11px; text-transform:uppercase; letter-spacing:0.5px;">Startelf danach</span>
+            <span class="badge">${lineup.formation.def}-${lineup.formation.mid}-${lineup.formation.fwd} · ${fmtTotal(lineup.total)}</span>
           </div>
           ${splitStartersByPosition(lineup.starters, lineup.formation).map(([label, list]) => `
             <div class="row" style="gap:6px; align-items:center; margin-bottom:6px;">
               <span class="muted" style="font-size:11px; width:32px; flex-shrink:0;">${label}</span>
-              <div class="row" style="gap:6px; flex-wrap:wrap;">${list.map(p => `<span class="badge">${avatarHtml(p)}${playerName(p)}</span>`).join('')}</div>
+              <div class="row" style="gap:6px; flex-wrap:wrap;">${list.map(starterBadge).join('')}</div>
             </div>`).join('')}
-        </div>`
-      : '<p class="muted" style="font-size:12px; margin-top:14px; padding-top:14px; border-top:1px solid var(--border);">Keine gültige Aufstellung mit dem verbleibenden Kader möglich.</p>';
+          <div class="muted" style="font-size:11px; text-transform:uppercase; letter-spacing:0.5px; margin:14px 0 8px;">Bank danach (${bench.length})</div>
+          ${benchHtml}
+        </div>`;
+    } else {
+      lineupHtml = '<p class="muted" style="font-size:12px; margin-top:14px; padding-top:14px; border-top:1px solid var(--border);">Keine gültige Aufstellung mit dem verbleibenden Kader möglich.</p>';
+    }
+    const lossMain = r.loss ? r.loss.main : null;
     return `<div style="background: var(--panel-2); border: 1px solid ${isBest ? 'var(--accent)' : 'var(--border)'}; border-radius: var(--radius); padding: 18px; ${isBest ? 'box-shadow: 0 0 0 1px var(--accent);' : ''}">
       <div class="row" style="justify-content: space-between; align-items:flex-start; gap:8px;">
         <h3 style="margin:0; font-size:15px;">${s.title}</h3>
         ${isBest ? '<span class="badge" style="background: var(--accent); color:#08130d; border:none; white-space:nowrap;">Beste Lösung</span>' : ''}
       </div>
       <p class="muted" style="font-size:12px; margin: 6px 0 14px;">${s.desc}</p>
-      <div class="${newBudget >= 0 ? 'trend-up' : 'trend-down'}" style="font-size:26px; font-weight:700; line-height:1.2;">${fmtMoney(newBudget)}</div>
-      <div class="muted" style="font-size:11px; margin-bottom:10px;">Neuer Kontostand</div>
+      <div class="${afterBids >= 0 ? 'trend-up' : 'trend-down'}" style="font-size:26px; font-weight:700; line-height:1.2;">${fmtMoney(newBudget)}</div>
+      <div class="muted" style="font-size:11px; margin-bottom:10px;">Neuer Kontostand${OPEN_BIDS > 0 ? `, nach offenen Geboten ${fmtMoney(afterBids)}` : ''}</div>
       <div style="height:6px; background: var(--border); border-radius:3px; overflow:hidden; margin-bottom:14px;">
         <div style="height:100%; width:${barPct}%; background: var(--accent);"></div>
       </div>
-      <div class="row" style="gap:20px;">
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px 16px;">
         <div><div class="muted" style="font-size:11px;">Erlös</div><div>${fmtMoney(sum)}</div></div>
         <div><div class="muted" style="font-size:11px;">Überschuss</div><div>${reachedGoal ? fmtMoney(sum - needed) : '–'}</div></div>
-        <div><div class="muted" style="font-size:11px;">Punkteschnitt-Δ</div><div>${lostPoints ? '-' + lostPoints : '0'}</div></div>
-      </div>
-      <div class="row" style="gap:20px; margin-top:10px;">
-        <div><div class="muted" style="font-size:11px;">Kader danach</div><div>${remainingSquad.length} Spieler</div></div>
-        <div><div class="muted" style="font-size:11px;">Je Position</div><div>${remainingPosSummary}</div></div>
+        <div title="Beste Aufstellung vorher minus beste Aufstellung nachher. Bankspieler kosten keine Punkte.">
+          <div class="muted" style="font-size:11px;">Startelf-Verlust (${val.unit})</div>
+          <div class="${lossMain != null && lossMain > 0.5 ? 'trend-down' : ''}">${lossMain == null ? '–' : fmtLoss(lossMain)}</div>
+          ${r.loss && val.secondary ? `<div class="sell-sub">nach Punkteschnitt ${fmtLoss(r.loss.sec)}</div>` : ''}
+        </div>
+        <div><div class="muted" style="font-size:11px;">Kader danach</div><div>${remaining.length} Spieler</div></div>
+        <div style="grid-column: 1 / -1;"><div class="muted" style="font-size:11px;">Je Position</div><div>${posSummary}</div></div>
       </div>
       ${!reachedGoal ? statusHtml('info', hitSquadLimit
-          ? `Mindestkadergröße von ${MIN_SQUAD_SIZE} Spielern erreicht — es fehlen noch ${fmtMoney(needed - sum)}.`
+          ? `Mindestkadergröße von ${SELL_MIN_SQUAD} Spielern erreicht, es fehlen noch ${fmtMoney(needed - sum)}.`
           : hitPositionLimit
-            ? `Weitere Verkäufe würden keine spielbare Formation mehr übrig lassen — es fehlen noch ${fmtMoney(needed - sum)}.`
-            : 'Reicht nicht aus, um den Zielwert zu erreichen.') : chips}
+            ? `Weitere Verkäufe würden keine spielbare Formation mehr übrig lassen, es fehlen noch ${fmtMoney(needed - sum)}.`
+            : 'Reicht nicht aus, um den Zielwert zu erreichen.') + (chosen.length ? chips : '') : chips}
       ${lineupHtml}
     </div>`;
   }).join('');
-  box.innerHTML = `<div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:16px;">${cards}</div>`;
+  box.innerHTML = `<p class="muted" style="font-size:12px; margin:0 0 12px;">Bis zum Zielwert fehlen ${fmtMoney(needed)}${OPEN_BIDS > 0 ? `, inklusive offener Gebote von ${fmtMoney(OPEN_BIDS)}` : ''}. ${esc(val.note)}</p>
+    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:16px;">${cards}</div>`;
+  SELL_STATE = { requested: true, shown: true, basis: val.basis };
 }
 
 async function loadSquad() {
@@ -2191,10 +2392,10 @@ function populateScenarioSelects() {
       const el = document.getElementById(`scenario${letter}Slot${n}`);
       return el ? el.value : '';
     });
-    const options = squad.map(p => `<option value="${getPid(p)}">${playerName(p)} — ${fmtMoney(p.marketValue ?? p.mv)}</option>`).join('');
+    const options = squad.map(p => `<option value="${getPid(p)}">${playerName(p)} · ${fmtMoney(p.marketValue ?? p.mv)}</option>`).join('');
     container.innerHTML = [1, 2, 3, 4, 5].map(n => `
       <select id="scenario${letter}Slot${n}" onchange="evalAllScenarios()" style="width:100%; margin-bottom:8px; font-size:13px;">
-        <option value="">– Spieler ${n} –</option>
+        <option value="">Spieler ${n} wählen</option>
         ${options}
       </select>`).join('');
     [1, 2, 3, 4, 5].forEach((n, i) => {
@@ -2202,6 +2403,7 @@ function populateScenarioSelects() {
       if (el && prevValues[i] && [...el.options].some(o => o.value === prevValues[i])) el.value = prevValues[i];
     });
   });
+  evalAllScenarios();
 }
 
 function evalScenario(letter) {
@@ -2214,8 +2416,14 @@ function evalScenario(letter) {
 
   const sum = players.reduce((a, p) => a + (p.marketValue ?? p.mv ?? 0), 0);
   const newBudget = (CURRENT_BUDGET ?? 0) + sum;
-  const pointsSum = players.reduce((a, p) => a + (avgPoints(p) ?? 0), 0);
-  const result = { letter, players, sum, newBudget, pointsSum };
+  // Startelf-Verlust nach Punkteschnitt (wie die optimale Aufstellung in diesem Tab): beste Aufstellung vorher
+  // minus nachher. Vorher stand hier die Summe der Schnitte aller Verkauften, auch von Bankspielern ohne Punkte.
+  const lineupBefore = computeBestLineup(squad);
+  const lineupAfter = computeBestLineup(squad.filter(p => !uniqueIds.includes(String(getPid(p)))));
+  const lossText = !players.length || !lineupBefore ? '–'
+    : !lineupAfter ? 'keine Formation'
+    : lineupBefore.total - lineupAfter.total > 0.5 ? '-' + fmtPts(lineupBefore.total - lineupAfter.total) : '0';
+  const result = { letter, players, sum, newBudget, lossText };
 
   const resultBox = document.getElementById(`scenario${letter}Result`);
   const chips = players.length
@@ -2226,24 +2434,25 @@ function evalScenario(letter) {
     <div style="font-size:22px; font-weight:600;">${fmtMoney(sum)}</div>
     <div class="muted" style="font-size:12px; margin-bottom:8px;">Erlös (Summe Marktwert)</div>
     <div class="row" style="gap:20px;">
-      <div><div class="muted" style="font-size:11px;">Neuer Kontostand</div><div class="${newBudget >= 0 ? 'trend-up' : 'trend-down'}" style="font-weight:600;">${fmtMoney(newBudget)}</div></div>
-      <div><div class="muted" style="font-size:11px;">Punkteschnitt</div><div style="font-weight:600;">${pointsSum || '–'}</div></div>
+      <div><div class="muted" style="font-size:11px;">Neuer Kontostand</div>${CURRENT_BUDGET === null ? '<div class="muted">–</div>' : `<div class="${newBudget >= 0 ? 'trend-up' : 'trend-down'}" style="font-weight:600;">${fmtMoney(newBudget)}</div>`}</div>
+      <div title="Beste Aufstellung vorher minus nachher, nach Punkteschnitt. Bankspieler kosten keine Punkte."><div class="muted" style="font-size:11px;">Startelf-Verlust (Ø)</div><div style="font-weight:600;">${lossText}</div></div>
     </div>
   `;
   return result;
 }
 
 function evalAllScenarios() {
-  if (CURRENT_BUDGET === null) {
-    document.getElementById('scenarioComparisonBox').innerHTML = statusHtml('info', 'Kontostand ist noch nicht geladen — einmal auf dem Start-Tab laden.');
-  }
   const results = ['A', 'B', 'C'].map(evalScenario);
   const box = document.getElementById('scenarioComparisonBox');
+  if (CURRENT_BUDGET === null) { // ohne Kontostand wäre "Neuer Kontostand" nur der Erlös
+    box.innerHTML = results.some(r => r.players.length) ? statusHtml('info', 'Kontostand ist noch nicht geladen. Einmal auf dem Start-Tab laden.') : '';
+    return;
+  }
   const cells = results.map(r => `
     <div style="flex:1; min-width:160px; text-align:center; padding:10px; background: var(--panel-2); border-radius: var(--radius); border: 1px solid var(--border);">
       <div class="muted" style="font-size:11px; text-transform:uppercase;">Szenario ${r.letter}</div>
       <div class="${r.newBudget >= 0 ? 'trend-up' : 'trend-down'}" style="font-size:20px; font-weight:700; margin-top:4px;">${fmtMoney(r.newBudget)}</div>
-      <div class="muted" style="font-size:11px; margin-top:2px;">Punkteschnitt: ${r.pointsSum || '–'}</div>
+      <div class="muted" style="font-size:11px; margin-top:2px;">Startelf-Verlust (Ø): ${r.lossText}</div>
     </div>`).join('');
   box.innerHTML = `<div class="row" style="gap:12px;">${cells}</div>`;
 }
@@ -2440,14 +2649,6 @@ function forecastCell(p) {
   // gerundet (Tsd/Mio): eine Prognose auf den Euro genau wäre Scheingenauigkeit, exakte Werte im Tooltip
   return `<span class="${lab.cls}" style="white-space:nowrap; cursor:help;${fc.clear ? ' font-weight:600;' : ''}" title="${esc(fcTooltip(fc))}">${body}</span>`;
 }
-// Markiert Widersprüche zwischen Momentum-Regel (Halten/Verkaufen) und einem klaren Prognose-Signal
-function fcConflictMark(reco, fc) {
-  if (!reco || !fc || !fc.clear) return '';
-  const conflict = (reco.label === 'Halten' && fc.direction === 'down') || (reco.label === 'Verkaufen' && fc.direction === 'up');
-  if (!conflict) return '';
-  const where = fc.direction === 'up' ? 'über' : 'unter';
-  return ` <span style="color: var(--accent-2); cursor:help;" title="Widerspruch: Der ganze Zielkorridor der 4-Tage-Prognose liegt ${where} dem heutigen Wert (${fmtPct(fc.rel)}).">⚠</span>`;
-}
 // Prognose-Kasten unter dem Chart (Popup mit 4-Tage-Tabelle, Team-Charts ohne)
 function forecastSummaryHtml(fc, lastDate, withTable) {
   if (!fc) return `<p class="muted" style="font-size:12px; margin-top:10px;">Keine Prognose: zu wenig Verlaufsdaten (mindestens ${FC_MIN_POINTS} Tage nötig).</p>`;
@@ -2573,11 +2774,6 @@ function renderValueChart(id) {
     <div class="vc-xaxis">${xLabels.join('')}</div>`;
 }
 
-// Einfache Momentum-Heuristik auf Basis der letzten Tages-Werte (p._history, aus computeMarketTrends).
-// KEINE Finanz-/Spielberatung im eigentlichen Sinn, nur ein grobes Signal: fällt der Marktwert seit
-// mind. 2 Tagen -> "Verkaufen" (Verlust begrenzen). Ist der Spieler im Gewinn, aber der Anstieg wird
-// von Tag zu Tag flacher -> "Verkaufen" (Gewinn mitnehmen, bevor die Kurve kippt). Steigt er weiter
-// gleich stark oder stärker -> "Halten". Bei zu wenig Daten oder uneindeutigem Muster -> "Beobachten".
 const UNTOUCHABLE_PLAYERS = new Set(); // Spieler-IDs, die der Nutzer als "nicht verkäuflich" markiert hat
 
 // "Unverkäuflich"-Markierungen je Liga im Browser merken (localStorage), damit sie ein Neuladen überleben.
@@ -2600,41 +2796,30 @@ function toggleUntouchable(pid) {
   else UNTOUCHABLE_PLAYERS.add(key);
   saveUntouchables();
   renderHoldSell();
+  if (SELL_STATE.requested) computeAutoSellScenarios(); // markierte Spieler sofort aus den Szenarien nehmen
 }
 
-// Robustere Momentum-Analyse: vergleicht den Schnitt der letzten 3 Tage mit dem Schnitt der letzten
-// 7 Tage, statt nur zwei einzelne Tage zu vergleichen (das reagierte auf normales Rauschen zu
-// nervös und hat "Verkaufen" empfohlen, obwohl der Spieler nur kurz langsamer stieg, insgesamt aber
-// weiter im Aufwind war). "Verkaufen" gibt's jetzt erst, wenn das Wachstum wirklich gegen null geht
-// oder negativ ist — nicht schon beim bloßen Abflachen.
+// Halten/Verkaufen aus der 4-Tage-Prognose (gedämpftes Momentum mit 80-%-Zielkorridor, je Spieler per
+// Rückrechnung kalibriert). Ersetzt die frühere Momentum-Regel (3- gegen 7-Tage-Schnitt), die schon bei
+// stagnierendem Marktwert "Verkaufen" zeigte und neben der Prognose ein zweites, konkurrierendes Signal war.
+// "Verkaufen" nur bei klarem Signal: Der ganze Korridor liegt unter dem heutigen Wert.
 function holdSellRecommendation(p) {
   if (UNTOUCHABLE_PLAYERS.has(String(getPid(p)))) {
     return { label: 'Halten', reason: 'Als unverkäuflich markiert', cls: 'trend-up' };
   }
-  const h = p._history;
-  if (!h || h.length < 8) return null;
-  const n = h.length;
-  const mv = h[n - 1];
-  const deltas = [];
-  for (let i = 1; i < n; i++) deltas.push(h[i] - h[i - 1]);
-  const avgLast3 = deltas.slice(-3).reduce((a, b) => a + b, 0) / Math.min(3, deltas.length);
-  const avgLast7 = deltas.slice(-7).reduce((a, b) => a + b, 0) / Math.min(7, deltas.length);
-  // "nahe null" = weniger als 0,1% des Marktwerts durchschnittlicher Tageszuwachs
-  const nearZeroThreshold = mv * 0.001;
-
-  if (avgLast3 <= -nearZeroThreshold) {
-    return { label: 'Verkaufen', reason: 'Marktwert fällt im 3-Tage-Schnitt', cls: 'trend-down' };
+  const fc = getForecast(p);
+  if (!fc) return null;
+  const pct = fmtPct(fc.rel);
+  if (fc.direction === 'down' && fc.clear) {
+    return { label: 'Verkaufen', reason: `Prognose fällt (${pct} in ${FC_HORIZON} Tagen), der ganze Zielkorridor liegt unter dem heutigen Wert. ${fcHitText(fc)}`, cls: 'trend-down' };
   }
-  if (Math.abs(avgLast3) < nearZeroThreshold) {
-    return { label: 'Verkaufen', reason: 'Wachstum ist im 3-Tage-Schnitt praktisch bei null angekommen', cls: 'trend-down' };
+  if (fc.direction === 'down') {
+    return { label: 'Beobachten', reason: `Prognose eher fallend (${pct} in ${FC_HORIZON} Tagen), aber unsicher: Der Zielkorridor reicht über den heutigen Wert. ${fcHitText(fc)}`, cls: 'muted' };
   }
-  if (avgLast3 > 0 && avgLast3 < avgLast7) {
-    return { label: 'Beobachten', reason: 'Wächst noch, aber das Wachstum flacht gerade ab', cls: 'muted' };
+  if (fc.direction === 'up') {
+    return { label: 'Halten', reason: `Prognose ${fc.clear ? 'steigt' : 'eher steigend'} (${pct} in ${FC_HORIZON} Tagen). ${fcHitText(fc)}`, cls: 'trend-up' };
   }
-  if (avgLast3 > 0 && avgLast3 >= avgLast7) {
-    return { label: 'Halten', reason: 'Wächst weiter gleich stark oder stärker (3-Tage- ≥ 7-Tage-Schnitt)', cls: 'trend-up' };
-  }
-  return { label: 'Beobachten', reason: 'Kein klares Muster', cls: 'muted' };
+  return { label: 'Halten', reason: 'Prognose seitwärts: kein Marktwert-Grund zu verkaufen.', cls: 'trend-up' };
 }
 
 // Spielerstatus aus dem "st"-Feld. Von Kickbase nicht offiziell dokumentiert. Zuordnung laut Community-Quellen:
@@ -2654,7 +2839,7 @@ function statusBadge(p) {
   const st = p.st;
   if (st === undefined || st === null) return '';
   const info = PLAYER_STATUS_MAP[st];
-  if (!info) return `<span class="badge" title="Unbekannter Status-Code">Status ${st}</span>`;
+  if (!info) return `<span class="badge" title="Unbekannter Status-Code">Status ${esc(String(st))}</span>`;
   if (st === 0) return ''; // fit = kein Hinweis nötig, sonst wäre jede Zeile mit einem Badge zugepflastert
   return `<span class="badge ${info.cls}" title="Status-Code ${st}, ungeprüft">${info.label}</span>`;
 }
@@ -2980,7 +3165,7 @@ document.addEventListener('focusout', hideChartTip);
 
 // ---------- Zustand des Spieltag-Moduls (wird bei Ligawechsel komplett ersetzt) ----------
 function emptyMdState() {
-  return { fixtures: null, info: null, teamNames: {}, teamSy: {}, lineup: null, perf: {}, loading: false, loadedAt: null, sources: {}, raw: {} };
+  return { fixtures: null, info: null, teamNames: {}, teamSy: {}, lineup: null, perf: {}, perfFailed: {}, loading: false, loadedAt: null, sources: {}, raw: {} };
 }
 let MD = emptyMdState();
 let LIGA_FORM = null; // { rows, days } der Liga-Form, null = noch nicht geladen
@@ -3165,9 +3350,11 @@ async function loadPerformance(player, md) {
       const { data, cached } = await cachedGet(path);
       if (!md.raw.performance) md.raw.performance = data;
       md.perf[pid] = { games: fillMissingDates(parsePerformance(data, teamId(player)), data, md), cached };
+      delete md.perfFailed[pid];
       return md.perf[pid];
     } catch (e) { /* nächster Pfad */ }
   }
+  md.perfFailed[pid] = true; // nicht bei jedem Tab-Wechsel erneut versuchen, erst bei "Neu berechnen"
   return null;
 }
 
@@ -3362,7 +3549,9 @@ function resetMatchdayUi() {
 function ensureMatchdayData() {
   if (!CURRENT_LEAGUE) return;
   const stale = MD.loadedAt && Date.now() - MD.loadedAt > API_TTL_MS; // älter als 30 Min: komplett neu laden
-  if (MD.loadedAt && !stale) renderMatchdayTab();
+  // Kader seit dem Laden geändert (z.B. Neukauf nach "Neu laden" im Kader-Tab): fehlende Punkte-Historien nachladen
+  const missing = MD.loadedAt && !stale && getCachedSquadPlayers().some(p => getPid(p) && !MD.perf[getPid(p)] && !MD.perfFailed[getPid(p)]);
+  if (MD.loadedAt && !stale && !missing) renderMatchdayTab();
   else if (!MD.loading) loadMatchdayData(!!stale);
 }
 
@@ -3375,7 +3564,7 @@ async function loadMatchdayData(force) {
   if (!squad.length) { status.innerHTML = statusHtml('info', 'Kader noch nicht geladen. Warte, bis die Liga fertig geladen ist, und klicke dann auf "Neu berechnen".'); return; }
   if (force) {
     for (const key of [...API_CACHE.keys()]) if (key.includes('/competitions/') || key.includes('/performance') || key.endsWith('/lineup')) API_CACHE.delete(key);
-    md.lineup = null; md.perf = {}; md.fixtures = null; md.info = null; md.loadedAt = null;
+    md.lineup = null; md.perf = {}; md.perfFailed = {}; md.fixtures = null; md.info = null; md.loadedAt = null;
   }
   md.loading = true;
   try {
@@ -3389,12 +3578,15 @@ async function loadMatchdayData(force) {
       for (let i = 0; i < list.length; i++) {
         if (md !== MD) return; // Liga gewechselt
         status.innerHTML = `<span class="spinner"></span> Lade Punkte je Spieltag: ${label} (${i + 1}/${list.length})…`;
+        if (!force && md.perfFailed[getPid(list[i])]) continue; // erst bei "Neu berechnen" wieder versuchen
+        const had = !!md.perf[getPid(list[i])];
         const res = await loadPerformance(list[i], md);
-        if (res && !res.cached) await sleep(120);
+        if (!had && !(res && res.cached)) await sleep(120); // Pause nur nach echten Requests
       }
       if (md !== MD) return;
       md.loadedAt = Date.now();
       renderMatchdayTab();
+      refreshSellAfterMatchdayLoad(); // Verkaufsszenarien von Punkteschnitt auf xP umstellen
     }
   } finally {
     md.loading = false;
@@ -3520,7 +3712,7 @@ function renderMatchdayTab() {
       <div><div class="muted" style="font-size:12px;">Countdown</div><div style="font-size:18px;" ${locked ? '' : `data-countdown="${next.first}"`}>${locked ? 'Aufstellung gesperrt' : fmtCountdown(next.first - Date.now())}</div></div>
       <div><div class="muted" style="font-size:12px;">Kontostand</div><div style="font-size:18px;" class="${budgetBad ? 'trend-down' : 'trend-up'}">${CURRENT_BUDGET != null ? fmtMoney(CURRENT_BUDGET) : '–'}</div></div>
     </div>
-    ${budgetBad ? statusHtml('err', `Kontostand im Minus: Ist er bei Anpfiff noch negativ, gibt es für diesen Spieltag keine Punkte. <a class="link" onclick="switchTab('sell')">Zu den Verkaufsszenarien</a>`) : ''}
+    ${budgetWarningHtml()}
     <div style="font-size:13px; margin-top:4px;">Deine Aufstellung: ${lineupInfo}</div>
     ${lineupIssues}`;
 
@@ -3640,7 +3832,7 @@ function renderMatchdayBanner() {
   if (!next || next.first == null) { panel.style.display = 'none'; return; }
   panel.style.display = 'block';
   const locked = next.first <= Date.now();
-  const budgetBad = CURRENT_BUDGET != null && CURRENT_BUDGET < 0;
+  const warning = budgetWarningHtml(); // inklusive offener Gebote aus dem Verkauf-Tab
   box.innerHTML = `<div class="row" style="justify-content:space-between; gap:12px;">
       <div class="row" style="gap:22px;">
         <div><div class="muted" style="font-size:12px;">Nächster Spieltag</div><div style="font-size:22px; font-weight:700;">${next.day}</div></div>
@@ -3649,8 +3841,8 @@ function renderMatchdayBanner() {
       </div>
       <button class="primary" style="width:auto; margin:0; padding:8px 14px;" onclick="switchTab('matchday')">Zur Spieltags-Prognose</button>
     </div>
-    ${budgetBad ? statusHtml('err', `Kontostand ${fmtMoney(CURRENT_BUDGET)}: Ist er bei Anpfiff noch im Minus, gibt es für diesen Spieltag keine Punkte. <a class="link" onclick="switchTab('sell')">Zu den Verkaufsszenarien</a>`) : ''}`;
-  if (budgetBad) { const st = box.querySelector('.status'); st.style.marginTop = '12px'; st.style.marginBottom = '0'; }
+    ${warning}`;
+  if (warning) { const st = box.querySelector('.status'); st.style.marginTop = '12px'; st.style.marginBottom = '0'; }
 }
 
 // ---------- Popup: Punkte je Spieltag + nächstes Spiel ----------
