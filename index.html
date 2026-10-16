@@ -1576,7 +1576,7 @@ function squadSortValue(p, col) {
   const profit = profitVal(p);
   switch (col) {
     case 'name': return playerName(p).toLowerCase();
-    case 'buy': return (mv != null && profit != null) ? (mv - profit) : (p.buyPrice ?? p.bp ?? p.purchasePrice ?? p.pp ?? null);
+    case 'buy': return buyPriceOf(p);
     case 'mv': return mv ?? null;
     case 'profit': return profit;
     case 'trend': return trendVal(p);
@@ -1593,7 +1593,7 @@ function renderSquadTable(players, rawData) {
   let rows = sorted.map(p => {
     const mv = p.marketValue ?? p.mv;
     const profit = profitVal(p); // mvgl: Gewinn/Verlust seit Kauf, direkt von Kickbase geliefert
-    const buy = (mv != null && profit != null) ? (mv - profit) : (p.buyPrice ?? p.bp ?? p.purchasePrice ?? p.pp ?? null);
+    const buy = buyPriceOf(p);
     const profitClass = profit == null ? 'muted' : profit > 0 ? 'trend-up' : profit < 0 ? 'trend-down' : 'muted';
     const points = p.totalPoints ?? p.tp ?? p.points;
     return `<tr>
@@ -2360,6 +2360,13 @@ function avgPoints(p) { return p.averagePoints ?? p.ap ?? p.avgPoints ?? null; }
 function totalPoints(p) { return p.totalPoints ?? p.tp ?? p.points ?? p.p ?? null; }
 function trend7Val(p) { return p.sdmvt ?? null; }
 function profitVal(p) { return p.mvgl ?? null; }
+// Kaufpreis = Marktwert minus Gewinn/Verlust seit Kauf (mvgl), damit Kaufpreis, Gewinn/Verlust und Marktwert immer
+// zusammenpassen. Ohne mvgl die direkten Felder, falls die API welche liefert. Gilt für den eigenen Kader und andere Teams.
+function buyPriceOf(p) {
+  const mv = p.marketValue ?? p.mv;
+  const profit = profitVal(p);
+  return (mv != null && profit != null) ? mv - profit : (p.buyPrice ?? p.bp ?? p.purchasePrice ?? p.pp ?? null);
+}
 function trendBadge(val) {
   if (val === null || val === undefined) return '<span class="muted">–</span>';
   const cls = val > 0 ? 'trend-up' : val < 0 ? 'trend-down' : 'muted';
@@ -2887,6 +2894,7 @@ let LAST_MANAGER_NAME = '';
 function managerSquadSortValue(p, col) {
   switch (col) {
     case 'name': return playerName(p).toLowerCase();
+    case 'buy': return buyPriceOf(p);
     case 'mv': return p.marketValue ?? p.mv ?? null;
     case 'trend': return trendVal(p);
     case 'profit': return profitVal(p);
@@ -2901,12 +2909,14 @@ function renderManagerSquad(players, data, managerName) {
   const rerender = "renderManagerSquad(LAST_MANAGER_SQUAD_PLAYERS, null, LAST_MANAGER_NAME)";
   let rows = sorted.map(p => {
     const profit = profitVal(p);
-    return `<tr><td>${playerCell(p)}</td><td>${fmtMoney(p.marketValue ?? p.mv)}</td><td>${trendBadge(trendVal(p))}</td><td>${profit != null ? trendBadge(profit) : '<span class="muted">–</span>'}</td><td>${p.totalPoints ?? p.tp ?? p.points ?? '–'}</td><td><a class="link" onclick="jumpToValueHistory('${getPid(p)}')">Verlauf</a></td></tr>`;
+    const buy = buyPriceOf(p);
+    return `<tr><td>${playerCell(p)}</td><td>${buy != null ? fmtMoney(buy) : '<span class="muted">–</span>'}</td><td>${fmtMoney(p.marketValue ?? p.mv)}</td><td>${trendBadge(trendVal(p))}</td><td>${profit != null ? trendBadge(profit) : '<span class="muted">–</span>'}</td><td>${p.totalPoints ?? p.tp ?? p.points ?? '–'}</td><td><a class="link" onclick="jumpToValueHistory('${getPid(p)}')">Verlauf</a></td></tr>`;
   }).join('');
   box.innerHTML = `<h3>Kader: ${esc(managerName)}</h3>
     <div style="margin-bottom:8px;"><a class="link" onclick="toggleManagerSquadRaw()">Rohdaten anzeigen</a> (falls Namen falsch aussehen, bitte Screenshot schicken)</div>
     <table><thead><tr>
       ${genericSortHeader('managerSquad', 'Spieler', 'name', rerender, true)}
+      ${genericSortHeader('managerSquad', 'Kaufpreis (berechnet)', 'buy', rerender, false, 'Marktwert minus Gewinn/Verlust seit Kauf, sortieren')}
       ${genericSortHeader('managerSquad', 'Marktwert', 'mv', rerender)}
       ${genericSortHeader('managerSquad', 'Trend (heute)', 'trend', rerender)}
       ${genericSortHeader('managerSquad', 'Gewinn/Verlust', 'profit', rerender)}
